@@ -1,0 +1,25 @@
+{
+  "name": "carpet-wash-system",
+  "version": "1.0.0",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "test": "node --test"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "description": "",
+  "dependencies": {
+    "axios": "^1.20.0",
+    "docx": "^9.8.1",
+    "exceljs": "^4.4.0",
+    "express": "^5.2.1",
+    "pg": "^8.23.1",
+    "selfsigned": "^5.5.0",
+    "sqlite3": "^6.0.1"
+  },
+  "overrides": {
+    "uuid": "^11.1.1"
+  }
+}

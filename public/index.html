@@ -1,0 +1,884 @@
+<!DOCTYPE html>
+<html lang="uz">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>TOZA GILAM - Professional ERP & Dastavka Tizimi</title>
+  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+</head>
+<body>
+
+  <!-- LOGIN EKRANI (Barcha foydalanuvchilar: Ega admin, Operator, Dastavchik) -->
+  <div id="loginScreen" class="login-overlay">
+    <div class="login-card">
+      <div class="login-brand">
+        <div class="login-logo"><i class="fa-solid fa-rug"></i></div>
+        <h2>TOZA GILAM ERP</h2>
+        <p>Gilam Yuvish & Dastavka Boshqaruv Tizimi</p>
+      </div>
+
+      <form id="loginForm" onsubmit="handleLogin(event)">
+        <div class="form-group">
+          <label>Foydalanuvchi logini (username):</label>
+          <div class="input-icon-wrap">
+            <i class="fa-solid fa-user"></i>
+            <input type="text" id="loginUsername" required placeholder="Masalan: ega, operator, kuryer1">
+          </div>
+        </div>
+        <div class="form-group">
+          <label>Parol:</label>
+          <div class="input-icon-wrap">
+            <i class="fa-solid fa-lock"></i>
+            <input type="password" id="loginPassword" required placeholder="Parol">
+          </div>
+        </div>
+        <button type="submit" class="btn btn-primary btn-block btn-lg" id="loginBtn">
+          <i class="fa-solid fa-right-to-bracket"></i> Tizimga Kirish
+        </button>
+      </form>
+    </div>
+  </div>
+
+  <!-- ASOSIY ILOVA LAYOUTI -->
+  <div class="app-layout" id="mainAppLayout" style="display: none;">
+    <!-- Chap menyu (Sidebar) -->
+    <aside class="sidebar">
+      <div class="brand">
+        <div class="brand-icon"><i class="fa-solid fa-rug"></i></div>
+        <div class="brand-text">
+          <h2>TOZA GILAM</h2>
+          <span>Professional ERP</span>
+        </div>
+      </div>
+
+      <!-- Foydalanuvchi profili va Chiqish -->
+      <div class="user-profile-widget">
+        <div class="user-avatar" id="sidebarUserAvatar">👑</div>
+        <div class="user-details">
+          <h4 id="sidebarUserName">Yuklanmoqda...</h4>
+          <span class="user-role-badge" id="sidebarUserRoleBadge">Ega Admin</span>
+        </div>
+        <button class="btn-password" title="Parolni almashtirish" onclick="openPasswordModal()">
+          <i class="fa-solid fa-key"></i>
+        </button>
+        <button class="btn-logout" title="Tizimdan chiqish" onclick="handleLogout()">
+          <i class="fa-solid fa-arrow-right-from-bracket"></i>
+        </button>
+      </div>
+
+      <nav class="nav-menu">
+        <button class="nav-item active nav-dashboard" onclick="switchTab('dashboard')">
+          <i class="fa-solid fa-chart-pie"></i>
+          <span>Boshqaruv Paneli</span>
+        </button>
+        <button class="nav-item nav-orders" onclick="switchTab('orders')">
+          <i class="fa-solid fa-clipboard-list"></i>
+          <span>Buyurtmalar</span>
+          <span class="badge" id="badgeTotalOrders">0</span>
+        </button>
+        <button class="nav-item nav-new-order" onclick="switchTab('new-order')">
+          <i class="fa-solid fa-circle-plus"></i>
+          <span>Buyurtma Olish</span>
+        </button>
+        <button class="nav-item nav-courier" onclick="switchTab('courier-mode')">
+          <i class="fa-solid fa-truck-fast"></i>
+          <span>Dastavchik Ish Maydoni</span>
+        </button>
+        <button class="nav-item owner-only" onclick="switchTab('pricing')">
+          <i class="fa-solid fa-tags"></i>
+          <span>Kategoriya & Narxlar</span>
+        </button>
+        <button class="nav-item owner-only" onclick="switchTab('staff')">
+          <i class="fa-solid fa-users"></i>
+          <span>Xodimlar & Kuryerlar</span>
+        </button>
+        <button class="nav-item owner-only nav-reports" onclick="switchTab('reports')">
+          <i class="fa-solid fa-file-excel"></i>
+          <span>Excel & Word Hisobot</span>
+        </button>
+        <button class="nav-item owner-only" onclick="switchTab('telegram-config')">
+          <i class="fa-brands fa-telegram"></i>
+          <span>Telegram Guruh Boti</span>
+        </button>
+      </nav>
+
+      <div class="sidebar-footer">
+        <div class="server-status">
+          <span class="status-dot pulse"></span>
+          <span>Baza & Server Faol</span>
+        </div>
+        <small class="version-tag">v3.0 Smart Carpet ERP</small>
+      </div>
+    </aside>
+
+    <!-- Asosiy ishchi maydon -->
+    <main class="main-content">
+      <!-- Yuqori qator (Top Navbar) -->
+      <header class="topbar">
+        <div class="topbar-left">
+          <h1 id="pageTitle">Boshqaruv Paneli</h1>
+          <p class="subtitle" id="pageSubtitle">Gilam, adyol, gilamcha va dastavka monitoringi</p>
+        </div>
+        <div class="topbar-actions">
+          <button class="btn btn-primary nav-new-order" onclick="switchTab('new-order')">
+            <i class="fa-solid fa-plus"></i> Yangi Buyurtma
+          </button>
+          <button class="btn btn-success owner-only" onclick="downloadExcel()">
+            <i class="fa-solid fa-file-excel"></i> Excel Yuklash
+          </button>
+          <button class="btn btn-telegram owner-only" onclick="switchTab('telegram-config')">
+            <i class="fa-brands fa-telegram"></i> Guruh Boti
+          </button>
+        </div>
+      </header>
+
+      <div class="content-body">
+
+        <!-- ================= 1. DASHBOARD ================= -->
+        <section id="tab-dashboard" class="tab-pane active">
+          <div class="stats-grid">
+            <div class="stat-card blue">
+              <div class="stat-icon"><i class="fa-solid fa-boxes-stacked"></i></div>
+              <div class="stat-info">
+                <span class="label">Jami Buyurtmalar</span>
+                <h3 id="statTotalOrders">0</h3>
+                <small class="trend">Barcha davr</small>
+              </div>
+            </div>
+
+            <div class="stat-card orange">
+              <div class="stat-icon"><i class="fa-solid fa-soap"></i></div>
+              <div class="stat-info">
+                <span class="label">Yuvish & Jarayonda</span>
+                <h3 id="statWashingOrders">0</h3>
+                <small class="trend">Sexda yuvilmoqda</small>
+              </div>
+            </div>
+
+            <div class="stat-card purple">
+              <div class="stat-icon"><i class="fa-solid fa-truck-arrow-right"></i></div>
+              <div class="stat-info">
+                <span class="label">Yetkazilmoqda (Dastavka)</span>
+                <h3 id="statDeliveringOrders">0</h3>
+                <small class="trend">Kuryerlar yo'lda</small>
+              </div>
+            </div>
+
+            <div class="stat-card green">
+              <div class="stat-icon"><i class="fa-solid fa-circle-check"></i></div>
+              <div class="stat-info">
+                <span class="label">Yetkazilgan (Tayyor)</span>
+                <h3 id="statCompletedOrders">0</h3>
+                <small class="trend">Topshirilgan</small>
+              </div>
+            </div>
+
+            <div class="stat-card teal">
+              <div class="stat-icon"><i class="fa-solid fa-ruler-combined"></i></div>
+              <div class="stat-info">
+                <span class="label">Jami Maydon (m²)</span>
+                <h3 id="statTotalSqm">0 m²</h3>
+                <small class="trend">Yuvilgan gilamlar</small>
+              </div>
+            </div>
+
+            <div class="stat-card indigo owner-only">
+              <div class="stat-info">
+                <span class="label">Kassaga Tushgan</span>
+                <h3 id="statTotalPaid">0 so'm</h3>
+                <small class="trend text-success">To'langan</small>
+              </div>
+            </div>
+
+            <div class="stat-card amber owner-only">
+              <div class="stat-info">
+                <span class="label">Umumiy Daromad</span>
+                <h3 id="statTotalRevenue">0 so'm</h3>
+                <small class="trend">Jami buyurtmalar summasi</small>
+              </div>
+            </div>
+
+            <div class="stat-card red owner-only">
+              <div class="stat-icon"><i class="fa-solid fa-hand-holding-dollar"></i></div>
+              <div class="stat-info">
+                <span class="label">Kutilayotgan Qoldiq</span>
+                <h3 id="statDebtAmount">0 so'm</h3>
+                <small class="trend text-danger">Mijozlardan qarz</small>
+              </div>
+            </div>
+          </div>
+
+          <div class="dashboard-columns">
+            <div class="card col-span-8">
+              <div class="card-header">
+                <h3><i class="fa-solid fa-clock-rotate-left"></i> So'nggi Buyurtmalar va Holatlar</h3>
+                <button class="btn btn-sm btn-outline" onclick="switchTab('orders')">Barchasini ko'rish</button>
+              </div>
+              <div class="table-responsive">
+                <table class="table" id="dashboardRecentTable">
+                  <thead>
+                    <tr>
+                      <th>Buyurtma</th>
+                      <th>Mijoz</th>
+                      <th>Manzil</th>
+                      <th>Hajm / m²</th>
+                      <th>Summa</th>
+                      <th>Holat</th>
+                      <th>Amallar</th>
+                    </tr>
+                  </thead>
+                  <tbody></tbody>
+                </table>
+              </div>
+            </div>
+
+            <div class="card col-span-4">
+              <div class="card-header">
+                <h3><i class="fa-brands fa-telegram text-primary"></i> Telegram Bot va Guruh</h3>
+              </div>
+              <div class="card-body">
+                <div class="tg-status-box">
+                  <div class="tg-badge connected"><i class="fa-solid fa-link"></i> Guruhga Ulanish Rejimi</div>
+                  <p class="tg-info-text">
+                    Yangi buyurtma tushganda yoki kuryer yetkazishga chiqqanda, guruhga mijoz manzili, avto lokatsiya havolasi (Yandex & Google Maps) va o'lchamlari bilan xabar tushadi.
+                  </p>
+                  <button class="btn btn-outline-primary btn-block" onclick="sendTestTelegram()">
+                    <i class="fa-paper-plane"></i> Guruhga test yuborish
+                  </button>
+                </div>
+
+                <div class="mt-4">
+                  <h4 style="font-size: 14px; margin-bottom: 8px;">Dastavchiklar tarkibi:</h4>
+                  <div id="couriersMiniList"></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- ================= 2. BUYURTMALAR RO'YXATI ================= -->
+        <section id="tab-orders" class="tab-pane">
+          <div class="card filter-card">
+            <div class="filter-row">
+              <div class="search-input">
+                <i class="fa-solid fa-magnifying-glass"></i>
+                <input type="text" id="orderSearchInput" placeholder="Buyurtma raqami, mijoz ismi, telefon, manzil..." oninput="filterOrders()">
+              </div>
+              <div class="filter-select">
+                <label>Holati:</label>
+                <select id="statusFilter" onchange="filterOrders()">
+                  <option value="all">Barcha holatlar</option>
+                  <option value="yangi">🆕 Yangi</option>
+                  <option value="qabul_qilindi">📦 Qabul qilindi</option>
+                  <option value="yuvishda">🧼 Yuvishda</option>
+                  <option value="quritishda">☀️ Quritishda</option>
+                  <option value="tayyor">✨ Tayyor (Qadoqlangan)</option>
+                  <option value="yetkazilmoqda">🚚 Yetkazilmoqda</option>
+                  <option value="yetkazildi">✅ Yetkazildi</option>
+                  <option value="bekor_qilindi">❌ Bekor qilindi</option>
+                </select>
+              </div>
+              <div class="filter-select">
+                <label>Dastavchik:</label>
+                <select id="courierFilter" onchange="filterOrders()">
+                  <option value="all">Barcha dastavchiklar</option>
+                </select>
+              </div>
+              <button class="btn btn-secondary" onclick="loadOrders()"><i class="fa-solid fa-rotate-right"></i> Yangilash</button>
+            </div>
+          </div>
+
+          <div class="card mt-3">
+            <div class="table-responsive">
+              <table class="table table-hover" id="ordersMainTable">
+                <thead>
+                  <tr>
+                    <th>Kod</th>
+                    <th>Mijoz & Tel</th>
+                    <th>Manzil & Lokatsiya</th>
+                    <th>Tarkibi</th>
+                    <th>Hajm / Dona</th>
+                    <th>Summa & To'lov</th>
+                    <th>Dastavchik</th>
+                    <th>Holati</th>
+                    <th style="width: 140px;">Boshqarish</th>
+                  </tr>
+                </thead>
+                <tbody id="ordersTableBody"></tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+
+        <!-- ================= 3. YANGI BUYURTMA OLISH (MUKAMMAL BELGILASH & KALKULYATOR) ================= -->
+        <section id="tab-new-order" class="tab-pane">
+          <div class="new-order-container">
+            <form id="newOrderForm" onsubmit="submitNewOrder(event)">
+              <div class="grid-layout">
+                <!-- Chap: Mijoz, Manzil va Avto Lokatsiya -->
+                <div class="card">
+                  <div class="card-header">
+                    <h3><i class="fa-solid fa-address-book"></i> Mijoz va Avto-Lokatsiya</h3>
+                  </div>
+                  <div class="card-body">
+                    <div class="form-group">
+                      <label>Mijoz F.I.SH <span class="required">*</span></label>
+                      <input type="text" id="custName" required placeholder="Masalan: Jamshid Aliyev">
+                    </div>
+
+                    <div class="form-row">
+                      <div class="form-group col-6">
+                        <label>Telefon raqami <span class="required">*</span></label>
+                        <input type="text" id="custPhone" required placeholder="+998 90 123 45 67">
+                      </div>
+                      <div class="form-group col-6">
+                        <label>Qo'shimcha tel</label>
+                        <input type="text" id="custPhone2" placeholder="+998 93 000 00 00">
+                      </div>
+                    </div>
+
+                    <!-- LOKATSIYANI AUTO OLISH TUGMASI VA BLOKI -->
+                    <div class="location-auto-box">
+                      <div class="location-box-header">
+                        <span><i class="fa-solid fa-location-crosshairs"></i> GPS Avto-Lokatsiya</span>
+                        <button type="button" class="btn btn-sm btn-primary" id="btnGetLocation" onclick="detectAutoLocation()">
+                          <i class="fa-solid fa-satellite-dish"></i> Joylashuvni Avto Olish
+                        </button>
+                      </div>
+                      <div id="locationStatusText" class="loc-status-text">
+                        Tugmani bosing — qurilma GPS lokatsiyasini avtomatik aniqlaydi va xaritaga bog'laydi.
+                      </div>
+                      <div class="form-row mt-2">
+                        <div class="form-group col-6">
+                          <label>Kenglik (Latitude):</label>
+                          <input type="text" id="custLat" placeholder="41.2995" readonly>
+                        </div>
+                        <div class="form-group col-6">
+                          <label>Uzunlik (Longitude):</label>
+                          <input type="text" id="custLng" placeholder="69.2401" readonly>
+                        </div>
+                      </div>
+                      <div id="mapPreviewLinkWrap" style="display: none; margin-top: 6px;">
+                        <a href="#" target="_blank" id="mapPreviewLink" class="btn btn-sm btn-outline">
+                          <i class="fa-solid fa-map-location-dot"></i> Xaritada ochish (Yandex / Google)
+                        </a>
+                      </div>
+                    </div>
+
+                    <div class="form-group mt-3">
+                      <label>Yetkazish manzili (Ko'cha, uy, xonadon) <span class="required">*</span></label>
+                      <input type="text" id="custAddress" required placeholder="Chilonzor 9-mavze, 14-uy, 28-xonadon">
+                    </div>
+
+                    <div class="form-group">
+                      <label>Mo'ljal (Landmark)</label>
+                      <input type="text" id="custLandmark" placeholder="Farhod bozori ro'parasida, 1-pod'ezd">
+                    </div>
+
+                    <div class="form-row" id="orderCourierAssignmentFields">
+                      <div class="form-group col-6">
+                        <label>Olib keluvchi Dastavchik</label>
+                        <select id="orderPickupCourier">
+                          <option value="">-- Dastavchik tanlang --</option>
+                        </select>
+                      </div>
+                      <div class="form-group col-6">
+                        <label>Yetkazib beruvchi Dastavchik</label>
+                        <select id="orderDeliveryCourier">
+                          <option value="">-- Dastavchik tanlang --</option>
+                        </select>
+                      </div>
+                    </div>
+
+                    <div class="form-row">
+                      <div class="form-group col-6">
+                        <label>Olib ketilgan sana</label>
+                        <input type="date" id="orderPickupDate">
+                      </div>
+                      <div class="form-group col-6">
+                        <label>Yetkazib berish muddati</label>
+                        <input type="date" id="orderTargetDate">
+                      </div>
+                    </div>
+
+                    <!-- MUKAMMAL BELGILASH: MAXSUS BELGILAR VA DEFECTLAR (CHIPS) -->
+                    <div class="form-group mt-2">
+                      <label>Gilam holati va belgilar (Bir marta bosib tanlang):</label>
+                      <div class="tags-selector" id="defectTagsWrap">
+                        <span class="tag-chip" onclick="toggleTagChip(this)">☕ Qahva/Choy dog'i</span>
+                        <span class="tag-chip" onclick="toggleTagChip(this)">🍷 Sharbat/Vino dog'i</span>
+                        <span class="tag-chip" onclick="toggleTagChip(this)">🧈 Yog'li dog'</span>
+                        <span class="tag-chip" onclick="toggleTagChip(this)">🐈 Hayvon yungi/hidi</span>
+                        <span class="tag-chip" onclick="toggleTagChip(this)">✂️ Chet qismi titilgan (Overtok kerak)</span>
+                        <span class="tag-chip" onclick="toggleTagChip(this)">🫧 Chuqur dezinfeksiya</span>
+                        <span class="tag-chip" onclick="toggleTagChip(this)">🪡 Yirtig'i bor (Ehtiyotkorlik)</span>
+                        <span class="tag-chip" onclick="toggleTagChip(this)">⭐ Nozik / Tabiiy ipak</span>
+                      </div>
+                    </div>
+
+                    <div class="form-group">
+                      <label>Qo'shimcha kuryer izohi</label>
+                      <textarea id="orderCourierNotes" rows="2" placeholder="Masalan: 3-qavat lift yo'q, qo'ng'iroq qilib chiqilsin"></textarea>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- O'ng: Tezkor O'lcham Kalkulyatori & Belgilash orqali hisoblash -->
+                <div class="card">
+                  <div class="card-header">
+                    <h3><i class="fa-solid fa-calculator"></i> Gilam O'lchamlari va Kalkulyator</h3>
+                    <button type="button" class="btn btn-sm btn-outline-primary" onclick="addNewItemRow()">
+                      <i class="fa-solid fa-plus"></i> Buyum qo'shish
+                    </button>
+                  </div>
+                  <div class="card-body">
+
+                    <div class="items-table-wrapper mt-3">
+                      <table class="table-items" id="orderItemsTable">
+                        <colgroup>
+                          <col class="item-col-category">
+                          <col class="item-col-dimension">
+                          <col class="item-col-dimension">
+                          <col class="item-col-metric">
+                          <col class="item-col-price">
+                          <col class="item-col-subtotal">
+                          <col class="item-col-notes">
+                          <col class="item-col-remove">
+                        </colgroup>
+                        <thead>
+                          <tr>
+                            <th>Turi / Kategoriya</th>
+                            <th>Uzunlik (m)</th>
+                            <th>Eni (m)</th>
+                            <th>Maydon (m²) / Soni</th>
+                            <th>Admin Narxi</th>
+                            <th>Jami Summa</th>
+                            <th>Izoh / Belgi</th>
+                            <th></th>
+                          </tr>
+                        </thead>
+                        <tbody id="itemsTableBody"></tbody>
+                      </table>
+                    </div>
+
+                    <!-- Hisob-kitoblar va kassa -->
+                    <div class="calculation-summary mt-3">
+                      <div class="summary-line courier-hidden-finance">
+                        <span>Jami maydon:</span>
+                        <strong id="calcTotalArea">0.00 m²</strong>
+                      </div>
+                      <div class="summary-line">
+                        <span>Buyumlar soni:</span>
+                        <strong id="calcTotalItems">0 dona</strong>
+                      </div>
+                      <div class="summary-line">
+                        <span>Boshlang'ich summa:</span>
+                        <strong id="calcSubtotal">0 so'm</strong>
+                      </div>
+                      <div class="summary-line courier-hidden-finance">
+                        <span>Chegirma (so'm):</span>
+                        <input type="number" id="orderDiscount" value="0" min="0" oninput="recalculateTotals()" style="width: 140px;">
+                      </div>
+                      <div class="summary-line total-highlight">
+                        <span>JAMI TO'LOV:</span>
+                        <strong id="calcFinalAmount">0 so'm</strong>
+                      </div>
+                      <div class="summary-line courier-hidden-finance">
+                        <span>Oldindan to'langan:</span>
+                        <input type="number" id="orderPaid" value="0" min="0" oninput="recalculateTotals()" style="width: 140px;">
+                      </div>
+                      <div class="summary-line">
+                        <span>To'lov usuli:</span>
+                        <select id="orderPaymentMethod" style="width: 140px;">
+                          <option value="naqd">Naqd pul</option>
+                          <option value="click">Click</option>
+                          <option value="payme">Payme</option>
+                          <option value="bank">Bank o'tkazma</option>
+                        </select>
+                      </div>
+                    </div>
+
+                    <div class="form-footer mt-4">
+                      <button type="submit" class="btn btn-primary btn-lg btn-block">
+                        <i class="fa-solid fa-check-double"></i> Buyurtmani Rasmiylashtirish & Guruhga Yuborish
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </form>
+          </div>
+        </section>
+
+        <!-- ================= 4. DASTAVCHIK ISH MAYDONI ================= -->
+        <section id="tab-courier-mode" class="tab-pane">
+          <div class="card courier-control-bar">
+            <div class="d-flex align-items-center justify-between flex-wrap gap-2">
+              <div>
+                <h3 id="courierDashboardTitle"><i class="fa-solid fa-truck-ramp-box"></i> Dastavchik Ish Maydoni</h3>
+                <p id="courierDashboardSubtitle">Olingan buyurtmalarni sexga topshirish va tayyorlarini yetkazish</p>
+              </div>
+              <div class="d-flex gap-2">
+                <button class="btn btn-primary" onclick="switchTab('new-order')">
+                  <i class="fa-solid fa-plus"></i> Yangi gilam olish
+                </button>
+                <select id="courierActiveSelect" onchange="renderCourierDeliveries()" style="font-weight: 600; padding: 8px 12px;">
+                  <option value="all">🚚 Barcha Kuryerlar Ishlari</option>
+                </select>
+              </div>
+            </div>
+          </div>
+
+          <div class="courier-orders-grid mt-3" id="courierOrdersContainer"></div>
+        </section>
+
+        <!-- ================= 5. KATEGORIYA VA NARXLAR ================= -->
+        <section id="tab-pricing" class="tab-pane">
+          <div class="row-flex">
+            <div class="card col-span-8">
+              <div class="card-header">
+                <h3><i class="fa-solid fa-list-check"></i> Xizmat Turlari va Narxlar (Admin Belgilagan Narxlar)</h3>
+                <button class="btn btn-sm btn-primary" onclick="openNewCategoryModal()"><i class="fa-solid fa-plus"></i> Yangi Xizmat</button>
+              </div>
+              <div class="table-responsive">
+                <table class="table" id="pricingTable">
+                  <thead>
+                    <tr>
+                      <th>Belgi</th>
+                      <th>Nomi</th>
+                      <th>Birligi</th>
+                      <th>Narxi</th>
+                      <th>Tavsifi</th>
+                      <th>Amal</th>
+                    </tr>
+                  </thead>
+                  <tbody id="pricingTableBody"></tbody>
+                </table>
+              </div>
+            </div>
+
+            <!-- INTERAKTIV ADMIN KALKULYATORI (1.30 ga 2.60 bo'lsa m² va admin narxida hisoblaydi) -->
+            <div class="card col-span-4">
+              <div class="card-header">
+                <h3><i class="fa-solid fa-calculator"></i> O'lcham & Narx Kalkulyatori</h3>
+              </div>
+              <div class="card-body">
+                <p style="font-size: 13px; color: var(--text-muted); margin-bottom: 12px;">
+                  Mijoz gilam o'lchamini aytganda kvadrat metr va admin belgilagan narx bo'yicha darhol hisoblab beradi:
+                </p>
+                <div class="form-group">
+                  <label>Xizmat / Gilam turi</label>
+                  <select id="quickCalcCategory" onchange="runQuickCalc()"></select>
+                </div>
+                <div class="form-row">
+                  <div class="form-group col-6">
+                    <label>Uzunligi (masalan 1.30 m)</label>
+                    <input type="number" id="quickCalcLen" value="1.30" step="0.05" oninput="runQuickCalc()">
+                  </div>
+                  <div class="form-group col-6">
+                    <label>Eni (masalan 2.60 m)</label>
+                    <input type="number" id="quickCalcWid" value="2.60" step="0.05" oninput="runQuickCalc()">
+                  </div>
+                </div>
+                <div class="form-group">
+                  <label>Gilamlar soni</label>
+                  <input type="number" id="quickCalcQty" value="1" min="1" oninput="runQuickCalc()">
+                </div>
+                <div class="quick-calc-result">
+                  <div class="res-item">1 ta gilam maydoni: <b id="quickResSingleArea">3.38 m²</b></div>
+                  <div class="res-item">Jami maydon: <b id="quickResArea">3.38 m²</b></div>
+                  <div class="res-item">1 m² uchun admin narxi: <b id="quickResUnitPrice">15 000 so'm</b></div>
+                  <div class="res-total">JAMI HISOB: <span id="quickResTotal">50 700 so'm</span></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- ================= 6. XODIMLAR VA DASTAVCHIKLAR ================= -->
+        <section id="tab-staff" class="tab-pane">
+          <div class="card">
+            <div class="card-header">
+              <h3><i class="fa-solid fa-users-gear"></i> Xodimlar va Dastavchiklar (Login & Parollar)</h3>
+              <button class="btn btn-sm btn-primary" onclick="openNewStaffModal()"><i class="fa-solid fa-user-plus"></i> Yangi Xodim Qo'shish</button>
+            </div>
+            <div class="table-responsive">
+              <table class="table" id="staffTable">
+                <thead>
+                  <tr>
+                    <th>F.I.SH</th>
+                    <th>Login</th>
+                    <th>Lavozimi / Roli</th>
+                    <th>Telefon</th>
+                    <th>Avtomobil / Mashina raqami</th>
+                    <th>Holati</th>
+                    <th>Yaratilgan</th>
+                  </tr>
+                </thead>
+                <tbody id="staffTableBody"></tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+
+        <!-- ================= 7. HISOBOTLAR (EXCEL & WORD) ================= -->
+        <section id="tab-reports" class="tab-pane">
+          <div class="reports-grid">
+            <div class="report-box excel-box">
+              <div class="report-icon"><i class="fa-solid fa-file-excel"></i></div>
+              <h3>Excel Barcha Buyurtmalar Hisoboti</h3>
+              <p>Mijozlar, gilamlar o'lchamlari (kv.m / dona), kassa tushumlari, qarzdorliklar va dastavchiklar hisoboti 3 ta alohida varaqda (.xlsx formatida).</p>
+              <button class="btn btn-success btn-lg owner-only" onclick="downloadExcel()">
+                <i class="fa-solid fa-download"></i> Excel (.xlsx) Hisobotni Yuklab Olish
+              </button>
+            </div>
+
+            <div class="report-box word-box">
+              <div class="report-icon"><i class="fa-solid fa-file-word"></i></div>
+              <h3>Word Umumiy Boshqaruv Hisoboti</h3>
+              <p>Rahbariyat va ega admin uchun korxonaning umumiy ko'rsatkichlari, daromad, yuvilgan maydonlar va faollik haqida rasmiy bayonnoma (.docx).</p>
+              <button class="btn btn-primary btn-lg" onclick="downloadWordSummary()">
+                <i class="fa-solid fa-download"></i> Word (.docx) Jamlama Hisobotni Yuklash
+              </button>
+            </div>
+          </div>
+
+          <div class="card mt-4">
+            <div class="card-header">
+              <h3><i class="fa-solid fa-print"></i> Alohida Buyurtmalar Bo'yicha Kvitansiya (Word .docx)</h3>
+            </div>
+            <div class="card-body">
+              <div class="table-responsive mt-2">
+                <table class="table" id="receiptReportsTable">
+                  <thead>
+                    <tr>
+                      <th>Kod</th>
+                      <th>Mijoz</th>
+                      <th>Telefon</th>
+                      <th>Summa</th>
+                      <th>Holat</th>
+                      <th>Kvitansiya</th>
+                    </tr>
+                  </thead>
+                  <tbody></tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- ================= 8. TELEGRAM BOT SOZLAMALARI ================= -->
+        <section id="tab-telegram-config" class="tab-pane">
+          <div class="row-flex">
+            <div class="card col-span-7">
+              <div class="card-header">
+                <h3><i class="fa-brands fa-telegram text-primary"></i> Telegram Bot va Guruh Aloqasi Sozlamalari</h3>
+              </div>
+              <div class="card-body">
+                <form id="tgSettingsForm" onsubmit="saveTgSettings(event)">
+                  <div class="form-group">
+                    <label>Telegram Bot Token (BotFather bergan token):</label>
+                    <input type="text" id="tgBotToken" placeholder="Masalan: 7123456789:AAHk... (bo'sh bo'lsa simulyatsiya qilinadi)">
+                    <small class="hint">@BotFather dan olingan bot tokeni</small>
+                  </div>
+
+                  <div class="form-group">
+                    <label>Yetkazishlar Guruhi Chat ID (Guruh yoki Kanal ID):</label>
+                    <input type="text" id="tgChatId" placeholder="Masalan: -1001234567890">
+                    <small class="hint">Bot qo'shilgan va admin qilingan guruh ID raqami</small>
+                  </div>
+
+                  <div class="form-group">
+                    <label class="checkbox-label">
+                      <input type="checkbox" id="tgAutoSend">
+                      <span>Holat o'zgarganda guruhga avtomatik yuborilsin (yangi buyurtma rasmiylashtirilganda xabar doim yuboriladi)</span>
+                    </label>
+                  </div>
+
+                  <hr style="margin: 20px 0; border: none; border-top: 1px solid var(--border-color);">
+
+                  <h4>Kompaniya rekvizitlari (Chek va xabarlar uchun)</h4>
+                  <div class="form-group mt-2">
+                    <label>Kompaniya Nomi:</label>
+                    <input type="text" id="compName" value="TOZA GILAM PROFESSIONAL YUVISH MARKAZI">
+                  </div>
+                  <div class="form-row">
+                    <div class="form-group col-6">
+                      <label>Aloqa telefoni:</label>
+                      <input type="text" id="compPhone" value="+998 71 200 55 44">
+                    </div>
+                    <div class="form-group col-6">
+                      <label>Manzil:</label>
+                      <input type="text" id="compAddress" value="Toshkent sh., Chilonzor tumani">
+                    </div>
+                  </div>
+
+                  <div class="d-flex gap-2 mt-3">
+                    <button type="submit" class="btn btn-primary"><i class="fa-solid fa-floppy-disk"></i> Sozlamalarni Saqlash</button>
+                    <button type="button" class="btn btn-outline-primary" onclick="sendTestTelegram()"><i class="fa-paper-plane"></i> Test Xabar Yuborish</button>
+                  </div>
+                </form>
+              </div>
+            </div>
+
+            <div class="card col-span-5">
+              <div class="card-header">
+                <h3><i class="fa-solid fa-clock-rotate-left"></i> Telegram Yuborilgan Xabarlar Jurnali</h3>
+                <button class="btn btn-sm btn-outline" onclick="loadTgLogs()"><i class="fa-rotate"></i></button>
+              </div>
+              <div class="card-body">
+                <div class="tg-logs-wrapper" id="tgLogsContainer"></div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+      </div>
+    </main>
+  </div>
+
+  <!-- Buyurtma Tafsiloti Modali -->
+  <div class="modal-backdrop" id="orderModal">
+    <div class="modal-dialog modal-lg">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h3 id="modalOrderTitle">Buyurtma Tafsiloti</h3>
+          <button class="modal-close" onclick="closeOrderModal()">&times;</button>
+        </div>
+        <div class="modal-body" id="modalOrderBody"></div>
+        <div class="modal-footer" id="modalOrderFooter"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Yangi Kategoriya Modali -->
+  <div class="modal-backdrop" id="categoryModal">
+    <div class="modal-dialog">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h3>Yangi Xizmat Kategoriya Qo'shish</h3>
+          <button class="modal-close" onclick="closeModal('categoryModal')">&times;</button>
+        </div>
+        <div class="modal-body">
+          <div class="form-group">
+            <label>Nomi</label>
+            <input type="text" id="newCatName" placeholder="Masalan: Yorgan tozalash">
+          </div>
+          <div class="form-group">
+            <label>O'lchov birligi</label>
+            <select id="newCatUnit">
+              <option value="kv_m">Kvadrat metr (m²)</option>
+              <option value="dona">Dona hisobida</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>1 birlik narxi (so'm)</label>
+            <input type="number" id="newCatPrice" placeholder="20000">
+          </div>
+          <div class="form-group">
+            <label>Tavsif</label>
+            <input type="text" id="newCatDesc" placeholder="Maxsus tozalash">
+          </div>
+          <div class="form-group">
+            <label>Emoji/Belgi</label>
+            <input type="text" id="newCatIcon" value="🧺">
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-secondary" onclick="closeModal('categoryModal')">Bekor qilish</button>
+          <button class="btn btn-primary" onclick="saveNewCategory()">Saqlash</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Yangi Xodim Modali -->
+  <div class="modal-backdrop" id="staffModal">
+    <div class="modal-dialog">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h3>Yangi Xodim / Dastavchik Qo'shish</h3>
+          <button class="modal-close" onclick="closeModal('staffModal')">&times;</button>
+        </div>
+        <div class="modal-body">
+          <div class="form-group">
+            <label>F.I.SH</label>
+            <input type="text" id="newStaffName" placeholder="Sanjar Karimov">
+          </div>
+          <div class="form-row">
+            <div class="form-group col-6">
+              <label>Login (username)</label>
+              <input type="text" id="newStaffLogin" placeholder="sanjar">
+            </div>
+            <div class="form-group col-6">
+              <label>Parol</label>
+              <input type="password" id="newStaffPass" minlength="8" maxlength="256" required autocomplete="new-password" placeholder="Kamida 8 belgi">
+            </div>
+          </div>
+          <div class="form-group">
+            <label>Lavozim (Rol)</label>
+            <select id="newStaffRole">
+              <option value="courier">🚚 Dastavchik (Kuryer)</option>
+              <option value="admin">💼 Operator / Admin</option>
+              <option value="owner">👑 Ega Admin</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>Telefon</label>
+            <input type="text" id="newStaffPhone" placeholder="+998 90 123 45 67">
+          </div>
+          <div class="form-row">
+            <div class="form-group col-6">
+              <label>Avtomashina modeli</label>
+              <input type="text" id="newStaffCar" placeholder="Damas / Labo">
+            </div>
+            <div class="form-group col-6">
+              <label>Mashina davlat raqami</label>
+              <input type="text" id="newStaffPlate" placeholder="01 A 123 AA">
+            </div>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-secondary" onclick="closeModal('staffModal')">Bekor qilish</button>
+          <button class="btn btn-primary" onclick="saveNewStaff()">Saqlash</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal-backdrop" id="passwordModal">
+    <div class="modal-dialog">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h3>Parolni almashtirish</h3>
+          <button class="modal-close" onclick="closeModal('passwordModal')">&times;</button>
+        </div>
+        <div class="modal-body">
+          <div class="form-group">
+            <label>Joriy parol</label>
+            <input type="password" id="currentPassword" autocomplete="current-password" required>
+          </div>
+          <div class="form-group">
+            <label>Yangi parol (kamida 8 belgi)</label>
+            <input type="password" id="newPassword" minlength="8" maxlength="256" autocomplete="new-password" required>
+          </div>
+          <div class="form-group">
+            <label>Yangi parolni tasdiqlang</label>
+            <input type="password" id="confirmNewPassword" minlength="8" maxlength="256" autocomplete="new-password" required>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-secondary" onclick="closeModal('passwordModal')">Bekor qilish</button>
+          <button class="btn btn-primary" onclick="changePassword()">Saqlash</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast -->
+  <div id="toast" class="toast"></div>
+
+  <script src="app.js"></script>
+</body>
+</html>
