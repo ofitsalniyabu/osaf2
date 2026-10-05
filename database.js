@@ -283,10 +283,18 @@ async function initDb() {
   }
 
   const checkUsers = await db.get('SELECT count(*) as count FROM users');
-  const maxOrder = await db.get('SELECT id FROM orders ORDER BY id DESC LIMIT 1');
+  const maxOrderNumber = await db.get(
+    "SELECT MAX(CAST(REPLACE(order_number, '#GLM-', '') AS INTEGER)) AS max_order_number FROM orders WHERE order_number LIKE '#GLM-%'"
+  );
+  const orderNumberSetting = await db.get('SELECT value FROM settings WHERE key = ?', ['order_number_start']);
+  const orderNumberStart = Number(orderNumberSetting?.value || '1000');
+  const defaultCounterValue = Math.max(
+    Number(maxOrderNumber?.max_order_number || 0),
+    Number.isFinite(orderNumberStart) && orderNumberStart > 0 ? orderNumberStart - 1 : 999
+  );
   await db.run(
-    'INSERT INTO counters (name, value) VALUES (?, ?) ON CONFLICT(name) DO NOTHING',
-    ['order_number', (maxOrder?.id || 0) + 1000]
+    'INSERT INTO counters (name, value) VALUES (?, ?) ON CONFLICT(name) DO UPDATE SET value = excluded.value',
+    ['order_number', defaultCounterValue]
   );
   if (checkUsers && checkUsers.count === 0 && process.env.NODE_ENV === 'test') {
     const credentials = [];
@@ -324,10 +332,11 @@ async function initDb() {
     // Sozlamalar
     await db.run('INSERT INTO settings (key, value) VALUES (?, ?)', ['bot_token', '']);
     await db.run('INSERT INTO settings (key, value) VALUES (?, ?)', ['group_chat_id', '']);
-    await db.run('INSERT INTO settings (key, value) VALUES (?, ?)', ['company_name', 'TOZA GILAM PROFESSIONAL YUVISH MARKAZI']);
-    await db.run('INSERT INTO settings (key, value) VALUES (?, ?)', ['company_phone', '+998 71 200 55 44']);
-    await db.run('INSERT INTO settings (key, value) VALUES (?, ?)', ['company_address', 'Toshkent sh., Chilonzor tumani, 19-mavze']);
-    await db.run('INSERT INTO settings (key, value) VALUES (?, ?)', ['auto_send_telegram', 'false']);
+    await db.run('INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO NOTHING', ['company_name', 'OSAF GILAM YUVISH MARKAZI']);
+    await db.run('INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO NOTHING', ['company_phone', '+998 71 200 55 44']);
+    await db.run('INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO NOTHING', ['company_address', 'Toshkent sh., Chilonzor tumani, 19-mavze']);
+    await db.run('INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO NOTHING', ['auto_send_telegram', 'false']);
+    await db.run('INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO NOTHING', ['order_number_start', '1000']);
 
     // Namuna mijozlar
     const c1 = await db.run(`INSERT INTO customers (full_name, phone, phone2, address, landmark) VALUES (?, ?, ?, ?, ?)`,
@@ -453,7 +462,7 @@ async function initDb() {
   for (const [key, value] of [
     ['bot_token', ''],
     ['group_chat_id', ''],
-    ['company_name', 'TOZA GILAM PROFESSIONAL YUVISH MARKAZI'],
+    ['company_name', 'OSAF GILAM YUVISH MARKAZI'],
     ['company_phone', ''],
     ['company_address', ''],
     ['auto_send_telegram', 'false']
@@ -463,6 +472,10 @@ async function initDb() {
       [key, value]
     );
   }
+  await db.run(
+    'UPDATE settings SET value = ? WHERE key = ? AND value = ?',
+    ['OSAF GILAM YUVISH MARKAZI', 'company_name', 'TOZA GILAM PROFESSIONAL YUVISH MARKAZI']
+  );
 
   const legacyDefaults = {
     ega: 'admin123',

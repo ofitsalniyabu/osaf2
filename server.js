@@ -831,7 +831,23 @@ app.post('/api/settings', async (req, res) => {
     return res.status(403).json({ success: false, error: 'Sozlamalarni o‘zgartirish uchun ruxsat yo‘q' });
   }
   try {
-    const { bot_token, group_chat_id, company_name, company_phone, company_address, auto_send_telegram } = req.body;
+    const { bot_token, group_chat_id, company_name, company_phone, company_address, auto_send_telegram, order_number_start } = req.body;
+    if (order_number_start !== undefined) {
+      const parsedStart = Number(order_number_start);
+      if (!Number.isInteger(parsedStart) || parsedStart < 1 || parsedStart > 999999) {
+        return res.status(400).json({ success: false, error: 'Buyurtma boshlang‘ich raqami 1 dan 999999 gacha bo‘lishi kerak' });
+      }
+      const currentMaxOrder = await db.get(
+        "SELECT MAX(CAST(REPLACE(order_number, '#GLM-', '') AS INTEGER)) AS max_value FROM orders WHERE order_number LIKE '#GLM-%'"
+      );
+      const existingMaxValue = Number(currentMaxOrder?.max_value || 0);
+      if (existingMaxValue > 0 && parsedStart <= existingMaxValue) {
+        return res.status(400).json({ success: false, error: `Buyurtma boshlang‘ich raqami mavjud buyurtmalardan kichik bo‘lishi mumkin emas. Eng katta buyurtma raqami: #GLM-${existingMaxValue}` });
+      }
+      const nextCounterValue = Math.max(Number((await db.get('SELECT value FROM counters WHERE name = ?', ['order_number']))?.value || 0), parsedStart - 1);
+      await db.run('INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value', ['order_number_start', String(parsedStart)]);
+      await db.run('INSERT INTO counters (name, value) VALUES (?, ?) ON CONFLICT(name) DO UPDATE SET value = excluded.value', ['order_number', nextCounterValue]);
+    }
     if (bot_token !== undefined) await telegram.setSetting('bot_token', bot_token);
     if (group_chat_id !== undefined) await telegram.setSetting('group_chat_id', group_chat_id);
     if (company_name !== undefined) await telegram.setSetting('company_name', company_name);
@@ -850,7 +866,7 @@ app.post('/api/telegram/test', async (req, res) => {
     return res.status(403).json({ success: false, error: 'Faqat egasi test xabar yubora oladi' });
   }
   try {
-    const testMsg = `🚀 <b>TOZA GILAM BOSHQARUV TIZIMI TEST XABARI</b>\n\nTelegram Bot va Guruh aloqasi muvaffaqiyatli ishlayapti!\nSana: ${new Date().toLocaleString('uz-UZ')}`;
+    const testMsg = `🚀 <b>OSAF GILAM YUVISH BOSHQARUV TIZIMI TEST XABARI</b>\n\nTelegram Bot va Guruh aloqasi muvaffaqiyatli ishlayapti!\nSana: ${new Date().toLocaleString('uz-UZ')}`;
     const result = await telegram.sendTelegramMessage(testMsg);
     res.json(result);
   } catch (err) {

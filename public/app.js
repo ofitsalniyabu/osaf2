@@ -5,6 +5,169 @@ let globalCouriers = [];
 let globalOrders = [];
 let authenticatedDataLoaded = false;
 
+function applyTheme(theme) {
+  const activeTheme = theme === 'light' ? 'light' : 'dark';
+  document.documentElement.dataset.theme = activeTheme;
+  document.querySelectorAll('[data-theme-toggle]').forEach(button => {
+    const nextTheme = activeTheme === 'dark' ? 'light' : 'dark';
+    const label = nextTheme === 'light' ? 'Kunduzgi rejim' : 'Tungi rejim';
+    const icon = button.querySelector('i');
+    if (icon) icon.className = `fa-solid ${nextTheme === 'light' ? 'fa-sun' : 'fa-moon'}`;
+    button.setAttribute('aria-label', `${label}ga o'tish`);
+    button.title = `${label}ga o'tish`;
+    const labelElement = button.querySelector('[data-theme-label]');
+    if (labelElement) labelElement.textContent = label;
+  });
+  const themeColor = document.querySelector('meta[name="theme-color"]');
+  if (themeColor) themeColor.content = activeTheme === 'dark' ? '#09090d' : '#f4f6fb';
+}
+
+function toggleTheme() {
+  const nextTheme = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark';
+  localStorage.setItem('osaf-theme', nextTheme);
+  applyTheme(nextTheme);
+}
+
+function enableHorizontalScroll() {
+  document.querySelectorAll('.table-responsive, .items-table-wrapper').forEach(scroller => {
+    scroller.tabIndex = 0;
+    scroller.setAttribute('aria-label', 'Jadvalni gorizontal surish mumkin');
+  });
+
+  document.addEventListener('wheel', event => {
+    const scroller = event.target.closest('.table-responsive, .items-table-wrapper, .nav-menu');
+    if (!scroller || scroller.scrollWidth <= scroller.clientWidth) return;
+    if (Math.abs(event.deltaY) <= Math.abs(event.deltaX)) return;
+
+    const maxScroll = scroller.scrollWidth - scroller.clientWidth;
+    if ((event.deltaY < 0 && scroller.scrollLeft <= 0) ||
+        (event.deltaY > 0 && scroller.scrollLeft >= maxScroll)) return;
+
+    scroller.scrollLeft += event.deltaY;
+    event.preventDefault();
+  }, { passive: false });
+
+  let dragState = null;
+  const suppressClick = new WeakSet();
+
+  document.querySelectorAll('.table-responsive, .items-table-wrapper').forEach(scroller => {
+    scroller.addEventListener('mousedown', event => {
+      if (event.button !== 0 || event.target.closest('a, button, input, select, textarea, label')) return;
+      dragState = { scroller, startX: event.clientX, startScroll: scroller.scrollLeft, moved: false };
+    });
+
+    scroller.addEventListener('click', event => {
+      if (!suppressClick.has(scroller)) return;
+      event.preventDefault();
+      event.stopPropagation();
+      suppressClick.delete(scroller);
+    }, true);
+  });
+
+  document.addEventListener('mousemove', event => {
+    if (!dragState) return;
+    const distance = event.clientX - dragState.startX;
+    if (Math.abs(distance) > 5 && !dragState.moved) {
+      dragState.moved = true;
+      dragState.scroller.classList.add('is-dragging');
+    }
+    if (dragState.moved) {
+      dragState.scroller.scrollLeft = dragState.startScroll - distance;
+      event.preventDefault();
+    }
+  });
+
+  document.addEventListener('mouseup', () => {
+    if (!dragState) return;
+    const { scroller, moved } = dragState;
+    scroller.classList.remove('is-dragging');
+    if (moved) {
+      suppressClick.add(scroller);
+      setTimeout(() => suppressClick.delete(scroller), 0);
+    }
+    dragState = null;
+  });
+}
+
+function enable3dEffects() {
+  const selector = '.stat-card, .card, .courier-card, .report-box, .login-card, .btn, .theme-toggle, .nav-item';
+  let activeSurface = null;
+  let activeTouchSurface = null;
+  const finePointer = window.matchMedia('(hover: hover) and (pointer: fine)');
+  const findSurface = target => target instanceof Element ? target.closest(selector) : null;
+
+  const resetSurface = surface => {
+    if (!surface) return;
+    surface.style.removeProperty('--tilt-x');
+    surface.style.removeProperty('--tilt-y');
+    surface.style.removeProperty('--light-x');
+    surface.style.removeProperty('--light-y');
+    surface.style.removeProperty('--shadow-x');
+    surface.style.removeProperty('--shadow-y');
+    surface.style.removeProperty('--shadow-wide-x');
+    surface.style.removeProperty('--shadow-wide-y');
+    surface.classList.remove('is-3d-active', 'is-touching');
+  };
+
+  const updateSurface = (surface, clientX, clientY, strength) => {
+    const rect = surface.getBoundingClientRect();
+    if (!rect.width || !rect.height) return;
+    const x = Math.max(-1, Math.min(1, ((clientX - rect.left) / rect.width - 0.5) * 2));
+    const y = Math.max(-1, Math.min(1, ((clientY - rect.top) / rect.height - 0.5) * 2));
+    const tilt = strength;
+    surface.style.setProperty('--tilt-x', `${-y * tilt}deg`);
+    surface.style.setProperty('--tilt-y', `${x * tilt}deg`);
+    surface.style.setProperty('--light-x', `${(x + 1) * 50}%`);
+    surface.style.setProperty('--light-y', `${(y + 1) * 50}%`);
+    surface.style.setProperty('--shadow-x', `${-x * 5}px`);
+    surface.style.setProperty('--shadow-y', `${Math.max(7, 12 + y * 5)}px`);
+    surface.style.setProperty('--shadow-wide-x', `${-x * 8}px`);
+    surface.style.setProperty('--shadow-wide-y', `${Math.max(12, 18 + y * 8)}px`);
+    surface.classList.add('is-3d-active');
+  };
+
+  document.addEventListener('pointermove', event => {
+    if (event.pointerType === 'touch' && activeTouchSurface) {
+      updateSurface(activeTouchSurface, event.clientX, event.clientY, 4);
+      activeTouchSurface.classList.add('is-touching');
+      return;
+    }
+    if (!finePointer.matches || event.pointerType !== 'mouse') return;
+    const surface = findSurface(event.target);
+    if (activeSurface && activeSurface !== surface) resetSurface(activeSurface);
+    activeSurface = surface;
+    if (surface) updateSurface(surface, event.clientX, event.clientY, 5);
+  });
+
+  document.addEventListener('pointerdown', event => {
+    if (event.target instanceof Element &&
+        event.target.closest('.table-responsive, .items-table-wrapper, .nav-menu')) return;
+    const surface = findSurface(event.target);
+    if (!surface || event.pointerType !== 'touch') return;
+    activeTouchSurface = surface;
+    updateSurface(surface, event.clientX, event.clientY, 2.5);
+    surface.classList.add('is-touching');
+  });
+
+  const releaseTouch = event => {
+    if (event.pointerType !== 'touch') return;
+    const surface = activeTouchSurface || findSurface(event.target);
+    if (!surface) return;
+    activeTouchSurface = null;
+    surface.classList.remove('is-touching');
+    setTimeout(() => resetSurface(surface), 180);
+  };
+  document.addEventListener('pointerup', releaseTouch);
+  document.addEventListener('pointercancel', releaseTouch);
+  document.addEventListener('pointerout', event => {
+    if (!finePointer.matches || event.pointerType !== 'mouse') return;
+    const nextSurface = findSurface(event.relatedTarget);
+    if (nextSurface) return;
+    resetSurface(activeSurface);
+    activeSurface = null;
+  });
+}
+
 function escapeHtml(value) {
   return String(value ?? '').replace(/[&<>"']/g, character => ({
     '&': '&amp;',
@@ -17,6 +180,10 @@ function escapeHtml(value) {
 
 // Boshlang'ich yuklash
 document.addEventListener('DOMContentLoaded', async () => {
+  applyTheme(localStorage.getItem('osaf-theme') || 'dark');
+  enableHorizontalScroll();
+  enable3dEffects();
+
   // Bugungi sanani yangi buyurtmaga qo'yish
   const today = new Date().toISOString().slice(0, 10);
   const target = new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
@@ -138,9 +305,9 @@ function applyUserSession() {
   document.getElementById('sidebarUserName').innerText = currentUser.full_name;
   
   const roleNames = {
-    'owner': "👑 Ega Admin",
-    'admin': "💼 Admin Operator",
-    'courier': `🚚 Dastavchik (${currentUser.car_model || 'Mashina'})`
+    'owner': 'Ega Admin',
+    'admin': 'Operator / Admin',
+    'courier': `Dastavchik (${currentUser.car_model || 'Mashina'})`
   };
   document.getElementById('sidebarUserRoleBadge').innerText = roleNames[currentUser.role] || currentUser.role;
 
@@ -243,7 +410,7 @@ function detectAutoLocation() {
         previewLink.href = `https://yandex.com/maps/?rtext=~${lat},${lng}&rtt=auto`;
       }
 
-      showToast("📍 Lokatsiya koordinatalari avtomatik olindi!");
+      showToast("Lokatsiya koordinatalari avtomatik olindi!");
     },
     (error) => {
       btn.innerHTML = `<i class="fa-solid fa-satellite-dish"></i> Qayta urinish`;
@@ -311,7 +478,7 @@ function renderPricingTable() {
 
   tbody.innerHTML = globalCategories.map(cat => `
     <tr>
-      <td style="font-size: 20px;">${escapeHtml(cat.icon || '🧺')}</td>
+      <td><span class="category-icon"><i class="fa-solid fa-rug" aria-hidden="true"></i></span></td>
       <td><strong>${escapeHtml(cat.name)}</strong></td>
       <td><span class="badge">${cat.unit === 'kv_m' ? 'Kvadrat metr (m²)' : 'Dona hisobi'}</span></td>
       <td><strong class="text-primary">${cat.price_per_unit.toLocaleString()} so'm</strong></td>
@@ -334,8 +501,6 @@ async function saveNewCategory() {
   const unit = document.getElementById('newCatUnit').value;
   const price_per_unit = document.getElementById('newCatPrice').value;
   const description = document.getElementById('newCatDesc').value;
-  const icon = document.getElementById('newCatIcon').value;
-
   if (!name || !price_per_unit) {
     alert("Iltimos, xizmat nomi va narxini kiriting");
     return;
@@ -344,7 +509,7 @@ async function saveNewCategory() {
   const res = await fetch('/api/categories', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ name, unit, price_per_unit, description, icon })
+    body: JSON.stringify({ name, unit, price_per_unit, description })
   });
 
   const json = await res.json();
@@ -402,7 +567,7 @@ function populateCourierSelects() {
   if (pickupSel) pickupSel.innerHTML = '<option value="">-- Dastavchik tanlang --</option>' + optionsHtml;
   if (delivSel) delivSel.innerHTML = '<option value="">-- Dastavchik tanlang --</option>' + optionsHtml;
   if (filterSel) filterSel.innerHTML = '<option value="all">Barcha dastavchiklar</option>' + optionsHtml;
-  if (activeSel) activeSel.innerHTML = '<option value="all">🚚 Barcha Kuryerlar Ishlari</option>' + optionsHtml;
+  if (activeSel) activeSel.innerHTML = '<option value="all">Barcha kuryerlar ishlari</option>' + optionsHtml;
 }
 
 function renderStaffTable(users) {
@@ -410,9 +575,9 @@ function renderStaffTable(users) {
   if (!tbody) return;
 
   const roleLabels = {
-    'owner': '<span class="status-pill status-yetkazildi">👑 Ega Admin</span>',
-    'admin': '<span class="status-pill status-yangi">💼 Operator / Admin</span>',
-    'courier': '<span class="status-pill status-yetkazilmoqda">🚚 Dastavchik</span>'
+    'owner': '<span class="status-pill status-yetkazildi"><i class="fa-solid fa-user-shield" aria-hidden="true"></i> Ega Admin</span>',
+    'admin': '<span class="status-pill status-yangi"><i class="fa-solid fa-user-gear" aria-hidden="true"></i> Operator / Admin</span>',
+    'courier': '<span class="status-pill status-yetkazilmoqda"><i class="fa-solid fa-truck-fast" aria-hidden="true"></i> Dastavchik</span>'
   };
 
   tbody.innerHTML = users.map(u => `
@@ -484,7 +649,7 @@ function addNewItemRow() {
 
   const catOptions = globalCategories.map(c => `
     <option value="${Number(c.id)}" data-unit="${escapeHtml(c.unit)}" data-price="${Number(c.price_per_unit)}">
-      ${escapeHtml(c.icon || '🧺')} ${escapeHtml(c.name)}
+      ${escapeHtml(c.name)}
     </option>
   `).join('');
 
@@ -710,7 +875,7 @@ async function submitNewOrder(e) {
     if (json.success) {
       const orderCreatedMessage = `Buyurtma ${json.orderNumber} yaratildi${currentUser.role === 'courier' ? ' va sizga biriktirildi' : ''}`;
       if (json.telegram?.success && !json.telegram.simulated) {
-        showToast(`🎉 ${orderCreatedMessage} va Telegram guruhiga yuborildi!`);
+        showToast(`${orderCreatedMessage} va Telegram guruhiga yuborildi!`);
       } else if (json.telegram?.simulated) {
         showToast(`${orderCreatedMessage}, lekin Telegram bot yoki guruh sozlanmagan.`, 'info');
       } else {
@@ -785,17 +950,18 @@ function filterOrders() {
 
 function getStatusPill(status) {
   const map = {
-    'yangi': { label: '🆕 Yangi tushgan', cls: 'status-yangi' },
-    'qabul_qilindi': { label: '📦 Qabul qilindi', cls: 'status-qabul_qilindi' },
-    'yuvishda': { label: '🧼 Yuvishda', cls: 'status-yuvishda' },
-    'quritishda': { label: '☀️ Quritishda', cls: 'status-quritishda' },
-    'tayyor': { label: '✨ Tayyor (Qadoqda)', cls: 'status-tayyor' },
-    'yetkazilmoqda': { label: '🚚 Yetkazilmoqda', cls: 'status-yetkazilmoqda' },
-    'yetkazildi': { label: '✅ Yetkazildi', cls: 'status-yetkazildi' },
-    'bekor_qilindi': { label: '❌ Bekor qilindi', cls: 'status-bekor_qilindi' }
+    'yangi': { label: 'Yangi tushgan', icon: 'fa-sparkles', cls: 'status-yangi' },
+    'qabul_qilindi': { label: 'Qabul qilindi', icon: 'fa-box-open', cls: 'status-qabul_qilindi' },
+    'yuvishda': { label: 'Yuvishda', icon: 'fa-soap', cls: 'status-yuvishda' },
+    'quritishda': { label: 'Quritishda', icon: 'fa-fan', cls: 'status-quritishda' },
+    'tayyor': { label: 'Tayyor (Qadoqda)', icon: 'fa-box', cls: 'status-tayyor' },
+    'yetkazilmoqda': { label: 'Yetkazilmoqda', icon: 'fa-truck-fast', cls: 'status-yetkazilmoqda' },
+    'yetkazildi': { label: 'Yetkazildi', icon: 'fa-circle-check', cls: 'status-yetkazildi' },
+    'bekor_qilindi': { label: 'Bekor qilindi', icon: 'fa-circle-xmark', cls: 'status-bekor_qilindi' }
   };
   const item = map[status] || { label: escapeHtml(status), cls: 'status-yangi' };
-  return `<span class="status-pill ${item.cls}">${item.label}</span>`;
+  const icon = item.icon ? `<i class="fa-solid ${item.icon}" aria-hidden="true"></i>` : '';
+  return `<span class="status-pill ${item.cls}">${icon}${item.label}</span>`;
 }
 
 function renderOrdersTable(orders) {
@@ -1139,13 +1305,13 @@ async function viewOrderDetails(orderId) {
           <label>Holatini yangilash:</label>
           <select id="modalUpdateStatus">
             <option value="yangi" ${ord.status === 'yangi' ? 'selected' : ''}>🆕 Yangi tushgan</option>
-            <option value="qabul_qilindi" ${ord.status === 'qabul_qilindi' ? 'selected' : ''}>📦 Qabul qilindi (Kuryer oldi)</option>
-            <option value="yuvishda" ${ord.status === 'yuvishda' ? 'selected' : ''}>🧼 Yuvish jarayonida</option>
-            <option value="quritishda" ${ord.status === 'quritishda' ? 'selected' : ''}>☀️ Quritish kamerasida</option>
-            <option value="tayyor" ${ord.status === 'tayyor' ? 'selected' : ''}>✨ Tayyorlandi (Qadoqlangan)</option>
-            <option value="yetkazilmoqda" ${ord.status === 'yetkazilmoqda' ? 'selected' : ''}>🚚 Kuryer yo'lda (Yetkazilmoqda)</option>
-            <option value="yetkazildi" ${ord.status === 'yetkazildi' ? 'selected' : ''}>✅ Yetkazib topshirildi</option>
-            <option value="bekor_qilindi" ${ord.status === 'bekor_qilindi' ? 'selected' : ''}>❌ Bekor qilindi</option>
+            <option value="qabul_qilindi" ${ord.status === 'qabul_qilindi' ? 'selected' : ''}>Qabul qilindi (Kuryer oldi)</option>
+            <option value="yuvishda" ${ord.status === 'yuvishda' ? 'selected' : ''}>Yuvish jarayonida</option>
+            <option value="quritishda" ${ord.status === 'quritishda' ? 'selected' : ''}>Quritish kamerasida</option>
+            <option value="tayyor" ${ord.status === 'tayyor' ? 'selected' : ''}>Tayyorlandi (Qadoqlangan)</option>
+            <option value="yetkazilmoqda" ${ord.status === 'yetkazilmoqda' ? 'selected' : ''}>Kuryer yo'lda (Yetkazilmoqda)</option>
+            <option value="yetkazildi" ${ord.status === 'yetkazildi' ? 'selected' : ''}>Yetkazib topshirildi</option>
+            <option value="bekor_qilindi" ${ord.status === 'bekor_qilindi' ? 'selected' : ''}>Bekor qilindi</option>
           </select>
         </div>
         <div class="form-group col-6">
@@ -1272,7 +1438,7 @@ async function sendOrderToTg(orderId) {
       if (json.simulated) {
         showToast("ℹ️ Xabar tizim jurnalida saqlandi (Simulyatsiya rejimida).");
       } else {
-        showToast("✈️ Buyurtma va lokatsiya Telegram guruhga tashlandi!");
+        showToast("Buyurtma va lokatsiya Telegram guruhga yuborildi!");
       }
       loadTgLogs();
     } else {
@@ -1292,7 +1458,7 @@ async function sendTestTelegram() {
       if (json.simulated) {
         alert("Bot Token yoki Guruh ID kiritilmagani sababli simulyatsiya jurnali yangilandi. 'Telegram Guruh Boti' bo'limida token va chat ID ni kiriting.");
       } else {
-        showToast("🚀 Guruhga test xabari yetib bordi!");
+        showToast("Guruhga test xabari yetib bordi!");
       }
       loadTgLogs();
     } else {
@@ -1313,6 +1479,7 @@ async function loadTgSettings() {
       if (document.getElementById('tgChatId')) document.getElementById('tgChatId').value = s.group_chat_id || '';
       if (document.getElementById('tgAutoSend')) document.getElementById('tgAutoSend').checked = s.auto_send_telegram === 'true';
       if (document.getElementById('compName')) document.getElementById('compName').value = s.company_name || '';
+      if (document.getElementById('orderNumberStart')) document.getElementById('orderNumberStart').value = s.order_number_start || '1000';
       if (document.getElementById('compPhone')) document.getElementById('compPhone').value = s.company_phone || '';
       if (document.getElementById('compAddress')) document.getElementById('compAddress').value = s.company_address || '';
     }
@@ -1327,18 +1494,21 @@ async function saveTgSettings(e) {
   const group_chat_id = document.getElementById('tgChatId').value.trim();
   const auto_send_telegram = document.getElementById('tgAutoSend').checked;
   const company_name = document.getElementById('compName').value.trim();
+  const order_number_start = document.getElementById('orderNumberStart').value.trim();
   const company_phone = document.getElementById('compPhone').value.trim();
   const company_address = document.getElementById('compAddress').value.trim();
 
   const res = await fetch('/api/settings', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ bot_token, group_chat_id, auto_send_telegram, company_name, company_phone, company_address })
+    body: JSON.stringify({ bot_token, group_chat_id, auto_send_telegram, company_name, order_number_start, company_phone, company_address })
   });
 
   const json = await res.json();
   if (json.success) {
     showToast("Telegram va korxona sozlamalari saqlandi!");
+  } else {
+    showToast(json.error || 'Sozlamalarni saqlashda xatolik yuz berdi!', 'error');
   }
 }
 
@@ -1411,7 +1581,7 @@ function populateQuickCalcSelect() {
 
   sel.innerHTML = globalCategories.map(c => `
     <option value="${Number(c.id)}" data-unit="${escapeHtml(c.unit)}" data-price="${Number(c.price_per_unit)}">
-      ${escapeHtml(c.icon || '🧺')} ${escapeHtml(c.name)} (${Number(c.price_per_unit).toLocaleString()} so'm / ${c.unit === 'kv_m' ? 'm²' : 'dona'})
+      ${escapeHtml(c.name)} (${Number(c.price_per_unit).toLocaleString()} so'm / ${c.unit === 'kv_m' ? 'm²' : 'dona'})
     </option>
   `).join('');
 }

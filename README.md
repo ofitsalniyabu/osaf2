@@ -1,4 +1,4 @@
-# 🧼 TOZA GILAM - Professional Gilam Yuvish va Dastavka Boshqaruv Tizimi (ERP)
+# 🧼 Osaf Gilam Yuvish - Professional Boshqaruv Tizimi (ERP)
 
 Mazkur tizim professional gilam yuvish korxonalari uchun maxsus ishlab chiqilgan bo'lib, buyurtmalarni qabul qilishdan boshlab yuvish, quritish, qadoqlash hamda dastavchiklar (kuryerlar) orqali mijozga yetkazib berishgacha bo'lgan barcha jarayonlarni to'liq avtomatlashtiradi.
 
@@ -62,7 +62,7 @@ npm install
 npm start
 ```
 
-Mahalliy server `https://localhost:3000` manzilida ishga tushadi. `npm test` avtomatlashtirilgan tekshiruvlarni bajaradi. Mahalliy ishlab chiqishda SQLite ishlatiladi; Vercel’da esa doimiy PostgreSQL ma’lumotlar bazasi majburiy.
+Mahalliy server `https://localhost:3000` manzilida ishga tushadi. Interfeys Font Awesome CDN ikonkalari, Manrope shriftining Google Fonts CDN versiyasi, saqlanadigan tun/kunduz rejimi va harakatni kamaytirish sozlamasini qo'llab-quvvatlaydi. 3D kartalar, tugmalar va menyular sichqoncha yoki mobil teginish harakatiga javob beradi; jadvallar telefon va sichqonchada yonlama suriladi. `npm test` avtomatlashtirilgan tekshiruvlarni bajaradi. Mahalliy ishlab chiqishda SQLite ishlatiladi; Vercel’da esa doimiy PostgreSQL ma’lumotlar bazasi majburiy.
 Eski ishga tushirish odati uchun `python server.py` ham HTTPS himoyali Node.js serverini ishga tushiradi; mustaqil, eski Python API endi so'rov qabul qilmaydi.
 
 ### HTTPS va mahalliy sertifikat

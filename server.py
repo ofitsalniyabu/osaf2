@@ -167,7 +167,7 @@ def init_db():
         # Settings
         c.execute("INSERT INTO settings (key, value) VALUES (?, ?)", ('bot_token', ''))
         c.execute("INSERT INTO settings (key, value) VALUES (?, ?)", ('group_chat_id', ''))
-        c.execute("INSERT INTO settings (key, value) VALUES (?, ?)", ('company_name', 'TOZA GILAM PROFESSIONAL YUVISH MARKAZI'))
+        c.execute("INSERT INTO settings (key, value) VALUES (?, ?)", ('company_name', 'OSAF GILAM YUVISH MARKAZI'))
         c.execute("INSERT INTO settings (key, value) VALUES (?, ?)", ('company_phone', '+998 71 200 55 44'))
         c.execute("INSERT INTO settings (key, value) VALUES (?, ?)", ('company_address', 'Toshkent sh., Chilonzor tumani, 19-mavze'))
         c.execute("INSERT INTO settings (key, value) VALUES (?, ?)", ('auto_send_telegram', 'false'))
@@ -573,7 +573,7 @@ class CarpetHandler(http.server.SimpleHTTPRequestHandler):
             return self._send_json({"success": False, "error": "Topilmadi"}, 404)
 
         elif path == '/api/telegram/test':
-            test_msg = f"🚀 <b>TOZA GILAM BOSHQARUV TIZIMI TEST XABARI</b>\n\nTelegram Bot va Guruh aloqasi muvaffaqiyatli ishlayapti!\nSana: {datetime.now().strftime('%Y-%m-%d %H:%M')}"
+            test_msg = f"🚀 <b>OSAF GILAM YUVISH BOSHQARUV TIZIMI TEST XABARI</b>\n\nTelegram Bot va Guruh aloqasi muvaffaqiyatli ishlayapti!\nSana: {datetime.now().strftime('%Y-%m-%d %H:%M')}"
             res = send_telegram(test_msg)
             return self._send_json(res)
 

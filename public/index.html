@@ -3,19 +3,27 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>TOZA GILAM - Professional ERP & Dastavka Tizimi</title>
+  <title>Osaf Gilam Yuvish - Professional Boshqaruv Tizimi</title>
+  <meta name="theme-color" content="#09090d">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="style.css">
-  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.7.2/css/all.min.css">
 </head>
 <body>
 
   <!-- LOGIN EKRANI (Barcha foydalanuvchilar: Ega admin, Operator, Dastavchik) -->
   <div id="loginScreen" class="login-overlay">
     <div class="login-card">
+      <button class="theme-toggle login-theme-toggle" type="button" data-theme-toggle onclick="toggleTheme()" aria-label="Kunduzgi rejimga o'tish" title="Kunduzgi rejimga o'tish">
+        <i class="fa-solid fa-sun" aria-hidden="true"></i>
+        <span data-theme-label>Kunduzgi rejim</span>
+      </button>
       <div class="login-brand">
         <div class="login-logo"><i class="fa-solid fa-rug"></i></div>
-        <h2>TOZA GILAM ERP</h2>
-        <p>Gilam Yuvish & Dastavka Boshqaruv Tizimi</p>
+        <h2>OSAF GILAM YUVISH</h2>
+        <p>Professional Gilam Yuvish Boshqaruv Tizimi</p>
       </div>
 
       <form id="loginForm" onsubmit="handleLogin(event)">
@@ -47,14 +55,14 @@
       <div class="brand">
         <div class="brand-icon"><i class="fa-solid fa-rug"></i></div>
         <div class="brand-text">
-          <h2>TOZA GILAM</h2>
-          <span>Professional ERP</span>
+          <h2>OSAF GILAM</h2>
+          <span>GILAM YUVISH</span>
         </div>
       </div>
 
       <!-- Foydalanuvchi profili va Chiqish -->
       <div class="user-profile-widget">
-        <div class="user-avatar" id="sidebarUserAvatar">👑</div>
+        <div class="user-avatar" id="sidebarUserAvatar"><i class="fa-solid fa-user-tie" aria-hidden="true"></i></div>
         <div class="user-details">
           <h4 id="sidebarUserName">Yuklanmoqda...</h4>
           <span class="user-role-badge" id="sidebarUserRoleBadge">Ega Admin</span>
@@ -108,7 +116,7 @@
           <span class="status-dot pulse"></span>
           <span>Baza & Server Faol</span>
         </div>
-        <small class="version-tag">v3.0 Smart Carpet ERP</small>
+        <small class="version-tag">OSAF GILAM YUVISH · ERP</small>
       </div>
     </aside>
 
@@ -121,6 +129,10 @@
           <p class="subtitle" id="pageSubtitle">Gilam, adyol, gilamcha va dastavka monitoringi</p>
         </div>
         <div class="topbar-actions">
+          <button class="theme-toggle" type="button" data-theme-toggle onclick="toggleTheme()" aria-label="Kunduzgi rejimga o'tish" title="Kunduzgi rejimga o'tish">
+            <i class="fa-solid fa-sun" aria-hidden="true"></i>
+            <span data-theme-label>Kunduzgi rejim</span>
+          </button>
           <button class="btn btn-primary nav-new-order" onclick="switchTab('new-order')">
             <i class="fa-solid fa-plus"></i> Yangi Buyurtma
           </button>
@@ -269,14 +281,14 @@
                 <label>Holati:</label>
                 <select id="statusFilter" onchange="filterOrders()">
                   <option value="all">Barcha holatlar</option>
-                  <option value="yangi">🆕 Yangi</option>
-                  <option value="qabul_qilindi">📦 Qabul qilindi</option>
-                  <option value="yuvishda">🧼 Yuvishda</option>
-                  <option value="quritishda">☀️ Quritishda</option>
-                  <option value="tayyor">✨ Tayyor (Qadoqlangan)</option>
-                  <option value="yetkazilmoqda">🚚 Yetkazilmoqda</option>
-                  <option value="yetkazildi">✅ Yetkazildi</option>
-                  <option value="bekor_qilindi">❌ Bekor qilindi</option>
+                  <option value="yangi">Yangi</option>
+                  <option value="qabul_qilindi">Qabul qilindi</option>
+                  <option value="yuvishda">Yuvishda</option>
+                  <option value="quritishda">Quritishda</option>
+                  <option value="tayyor">Tayyor (Qadoqlangan)</option>
+                  <option value="yetkazilmoqda">Yetkazilmoqda</option>
+                  <option value="yetkazildi">Yetkazildi</option>
+                  <option value="bekor_qilindi">Bekor qilindi</option>
                 </select>
               </div>
               <div class="filter-select">
@@ -406,14 +418,14 @@
                     <div class="form-group mt-2">
                       <label>Gilam holati va belgilar (Bir marta bosib tanlang):</label>
                       <div class="tags-selector" id="defectTagsWrap">
-                        <span class="tag-chip" onclick="toggleTagChip(this)">☕ Qahva/Choy dog'i</span>
-                        <span class="tag-chip" onclick="toggleTagChip(this)">🍷 Sharbat/Vino dog'i</span>
-                        <span class="tag-chip" onclick="toggleTagChip(this)">🧈 Yog'li dog'</span>
-                        <span class="tag-chip" onclick="toggleTagChip(this)">🐈 Hayvon yungi/hidi</span>
-                        <span class="tag-chip" onclick="toggleTagChip(this)">✂️ Chet qismi titilgan (Overtok kerak)</span>
-                        <span class="tag-chip" onclick="toggleTagChip(this)">🫧 Chuqur dezinfeksiya</span>
-                        <span class="tag-chip" onclick="toggleTagChip(this)">🪡 Yirtig'i bor (Ehtiyotkorlik)</span>
-                        <span class="tag-chip" onclick="toggleTagChip(this)">⭐ Nozik / Tabiiy ipak</span>
+                        <span class="tag-chip" onclick="toggleTagChip(this)"><i class="fa-solid fa-mug-hot" aria-hidden="true"></i> Qahva/Choy dog'i</span>
+                        <span class="tag-chip" onclick="toggleTagChip(this)"><i class="fa-solid fa-wine-glass" aria-hidden="true"></i> Sharbat/Vino dog'i</span>
+                        <span class="tag-chip" onclick="toggleTagChip(this)"><i class="fa-solid fa-droplet" aria-hidden="true"></i> Yog'li dog'</span>
+                        <span class="tag-chip" onclick="toggleTagChip(this)"><i class="fa-solid fa-paw" aria-hidden="true"></i> Hayvon yungi/hidi</span>
+                        <span class="tag-chip" onclick="toggleTagChip(this)"><i class="fa-solid fa-scissors" aria-hidden="true"></i> Chet qismi titilgan (Overtok kerak)</span>
+                        <span class="tag-chip" onclick="toggleTagChip(this)"><i class="fa-solid fa-soap" aria-hidden="true"></i> Chuqur dezinfeksiya</span>
+                        <span class="tag-chip" onclick="toggleTagChip(this)"><i class="fa-solid fa-kit-medical" aria-hidden="true"></i> Yirtig'i bor (Ehtiyotkorlik)</span>
+                        <span class="tag-chip" onclick="toggleTagChip(this)"><i class="fa-solid fa-gem" aria-hidden="true"></i> Nozik / Tabiiy ipak</span>
                       </div>
                     </div>
 
@@ -524,7 +536,7 @@
                   <i class="fa-solid fa-plus"></i> Yangi gilam olish
                 </button>
                 <select id="courierActiveSelect" onchange="renderCourierDeliveries()" style="font-weight: 600; padding: 8px 12px;">
-                  <option value="all">🚚 Barcha Kuryerlar Ishlari</option>
+                  <option value="all">Barcha kuryerlar ishlari</option>
                 </select>
               </div>
             </div>
@@ -701,7 +713,12 @@
                   <h4>Kompaniya rekvizitlari (Chek va xabarlar uchun)</h4>
                   <div class="form-group mt-2">
                     <label>Kompaniya Nomi:</label>
-                    <input type="text" id="compName" value="TOZA GILAM PROFESSIONAL YUVISH MARKAZI">
+                    <input type="text" id="compName" value="OSAF GILAM YUVISH MARKAZI">
+                  </div>
+                  <div class="form-group">
+                    <label>Buyurtma raqami qayerdan boshlansin?</label>
+                    <input type="number" id="orderNumberStart" min="1" step="1" value="1000" placeholder="Masalan: 1000">
+                    <small class="hint">Masalan: 1000 bo‘lsa, tizim keyingi buyurtmani #GLM-1001 dan boshlaydi. Mavjud buyurtma raqamlaridan kichik qiymat kiritish mumkin emas.</small>
                   </div>
                   <div class="form-row">
                     <div class="form-group col-6">
@@ -780,10 +797,6 @@
             <label>Tavsif</label>
             <input type="text" id="newCatDesc" placeholder="Maxsus tozalash">
           </div>
-          <div class="form-group">
-            <label>Emoji/Belgi</label>
-            <input type="text" id="newCatIcon" value="🧺">
-          </div>
         </div>
         <div class="modal-footer">
           <button class="btn btn-secondary" onclick="closeModal('categoryModal')">Bekor qilish</button>
@@ -819,9 +832,9 @@
           <div class="form-group">
             <label>Lavozim (Rol)</label>
             <select id="newStaffRole">
-              <option value="courier">🚚 Dastavchik (Kuryer)</option>
-              <option value="admin">💼 Operator / Admin</option>
-              <option value="owner">👑 Ega Admin</option>
+              <option value="courier">Dastavchik (Kuryer)</option>
+              <option value="admin">Operator / Admin</option>
+              <option value="owner">Ega Admin</option>
             </select>
           </div>
           <div class="form-group">

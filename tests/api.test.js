@@ -420,6 +420,33 @@ test('users can change their own password without losing the active session', as
   ownerCookie = newLogin.cookie.split(';')[0];
 });
 
+test('owner can configure the order-number starting value from admin settings', async () => {
+  const settingsResponse = await request('/api/settings', { cookie: ownerCookie });
+  assert.equal(settingsResponse.status, 200);
+
+  const saveResponse = await request('/api/settings', {
+    cookie: ownerCookie,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ order_number_start: 1234 })
+  });
+  assert.equal(saveResponse.status, 200);
+
+  const created = await request('/api/orders', {
+    cookie: ownerCookie,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      customer_name: 'Order Start Test',
+      customer_phone: '+998901234567',
+      customer_address: 'Setting test address',
+      items: [{ category_id: 1, length: 2, width: 3, unit_price: 1, quantity: 1 }]
+    })
+  });
+  assert.equal(created.status, 200);
+  assert.equal((await created.json()).orderNumber, '#GLM-1234');
+});
+
 test('logout invalidates the server-side session', async () => {
   const response = await request('/api/auth/logout', { cookie: ownerCookie, method: 'POST' });
   assert.equal(response.status, 200);
