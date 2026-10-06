@@ -210,7 +210,7 @@ function enable3dEffects() {
 
   document.addEventListener('pointermove', event => {
     if (event.pointerType === 'touch' && activeTouchSurface) {
-      updateSurface(activeTouchSurface, event.clientX, event.clientY, 4);
+      updateSurface(activeTouchSurface, event.clientX, event.clientY, 1.5);
       activeTouchSurface.classList.add('is-touching');
       return;
     }
@@ -218,7 +218,7 @@ function enable3dEffects() {
     const surface = findSurface(event.target);
     if (activeSurface && activeSurface !== surface) resetSurface(activeSurface);
     activeSurface = surface;
-    if (surface) updateSurface(surface, event.clientX, event.clientY, 5);
+    if (surface) updateSurface(surface, event.clientX, event.clientY, 2);
   });
 
   document.addEventListener('pointerdown', event => {
@@ -227,7 +227,7 @@ function enable3dEffects() {
     const surface = findSurface(event.target);
     if (!surface || event.pointerType !== 'touch') return;
     activeTouchSurface = surface;
-    updateSurface(surface, event.clientX, event.clientY, 2.5);
+    updateSurface(surface, event.clientX, event.clientY, 1.5);
     surface.classList.add('is-touching');
   });
 
@@ -1689,8 +1689,7 @@ async function loadTgSettings() {
   }
 }
 
-async function saveTgSettings(e) {
-  e.preventDefault();
+async function persistTelegramSettings() {
   const bot_token = document.getElementById('tgBotToken').value.trim();
   const group_chat_id = document.getElementById('tgChatId').value.trim();
   const telegram_admin_id = document.getElementById('tgAdminId').value.trim();
@@ -1707,21 +1706,28 @@ async function saveTgSettings(e) {
     body: JSON.stringify({ bot_token, group_chat_id, telegram_admin_id, app_url, auto_send_telegram, company_name, order_number_start, company_phone, company_address })
   });
 
-  const json = await res.json();
-  if (json.success) {
-    showToast("Telegram va korxona sozlamalari saqlandi!");
+  const result = await res.json();
+  if (!res.ok || !result.success) throw new Error(result.error || 'Sozlamalarni saqlashda xatolik yuz berdi');
+}
+
+async function saveTgSettings(event) {
+  event.preventDefault();
+  try {
+    await persistTelegramSettings();
+    showToast('Telegram sozlamalari saqlandi');
     await loadTelegramStatus();
-  } else {
-    showToast(json.error || 'Sozlamalarni saqlashda xatolik yuz berdi!', 'error');
+  } catch (error) {
+    showToast(error.message, 'error');
   }
 }
 
 async function setupTelegramWebhook() {
   try {
+    await persistTelegramSettings();
     const response = await fetch('/api/telegram/setup', { method: 'POST' });
     const result = await response.json();
     if (!response.ok || !result.success) throw new Error(result.error || 'Telegram botni ulab bo‘lmadi');
-    showToast('Bot webhook o‘rnatildi va buyruqlar faollashtirildi');
+    showToast('Sozlamalar saqlandi, bot ulandi. Endi Telegramda botga /start yuboring.');
     await loadTelegramStatus();
   } catch (error) {
     alert(error.message);
@@ -1743,6 +1749,7 @@ async function loadTelegramStatus() {
       <p><strong>Webhook:</strong> ${status.webhook?.url ? escapeHtml(status.webhook.url) : 'Ulanmagan'}</p>
       <p><strong>Guruh / ega chat:</strong> ${status.group_chat_configured ? 'Guruh sozlangan' : 'Guruh yo‘q'} / ${status.admin_chat_configured ? 'Ega ID sozlangan' : 'Ega ID yo‘q'}</p>
       <p><strong>Botga bog‘langan xodimlar:</strong> ${Number(status.linked_users)}</p>
+      ${status.bot?.username ? `<p><a href="https://t.me/${encodeURIComponent(status.bot.username)}" target="_blank" rel="noopener noreferrer">Telegramda @${escapeHtml(status.bot.username)} botini ochish</a></p>` : ''}
       ${status.webhook ? `<p><strong>Kutilayotgan update:</strong> ${Number(status.webhook.pending_update_count)}${status.webhook.last_error_message ? ` · <span class="text-danger">${escapeHtml(status.webhook.last_error_message)}</span>` : ''}</p>` : ''}
       ${status.error ? `<p class="text-danger"><strong>Telegram xatosi:</strong> ${escapeHtml(status.error)}</p>` : ''}
     `;

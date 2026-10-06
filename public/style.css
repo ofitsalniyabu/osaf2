@@ -1420,6 +1420,34 @@ html[data-theme="light"] .size-preset {
   padding: 14px;
 }
 
+.tg-setup-guide {
+  margin-bottom: 18px;
+  padding: 14px 16px;
+  border: 1px solid rgba(225, 29, 72, 0.35);
+  border-radius: 10px;
+  background: rgba(225, 29, 72, 0.07);
+  color: var(--text-main);
+  line-height: 1.55;
+}
+
+.tg-setup-guide ol {
+  margin: 8px 0 8px 22px;
+}
+
+.tg-setup-guide li + li {
+  margin-top: 4px;
+}
+
+.tg-setup-guide p {
+  margin: 0;
+  color: var(--text-muted);
+}
+
+.tg-setup-guide a {
+  color: #fb7185;
+  text-decoration: underline;
+}
+
 .tg-badge {
   display: inline-flex;
   align-items: center;
@@ -1948,10 +1976,10 @@ html[data-theme="light"] .items-table-wrapper::-webkit-scrollbar-track {
 .login-card {
   position: relative;
   transition:
-    transform 280ms cubic-bezier(0.16, 1, 0.3, 1),
-    box-shadow 280ms ease,
-    border-color 220ms ease,
-    background-color 220ms ease;
+    transform 200ms cubic-bezier(0.2, 0.8, 0.2, 1),
+    box-shadow 200ms ease,
+    border-color 180ms ease,
+    background-color 180ms ease;
 }
 
 .stat-card::after,
@@ -1984,11 +2012,11 @@ html[data-theme="light"] .items-table-wrapper::-webkit-scrollbar-track {
     perspective(1100px)
     rotateX(var(--tilt-x, 0deg))
     rotateY(var(--tilt-y, 0deg))
-    translate3d(0, -3px, 12px);
+    translate3d(0, -1px, 4px);
   box-shadow:
-    var(--shadow-x, 0px) var(--shadow-y, 18px) 0 rgba(0, 0, 0, 0.34),
-    var(--shadow-wide-x, 0px) var(--shadow-wide-y, 30px) 38px rgba(0, 0, 0, 0.34),
-    0 0 26px rgba(225, 29, 72, 0.1),
+    var(--shadow-x, 0px) var(--shadow-y, 10px) 0 rgba(0, 0, 0, 0.24),
+    var(--shadow-wide-x, 0px) var(--shadow-wide-y, 16px) 24px rgba(0, 0, 0, 0.24),
+    0 0 18px rgba(225, 29, 72, 0.08),
     inset 0 1px 0 rgba(255, 255, 255, 0.1);
   border-color: rgba(251, 113, 133, 0.48);
 }
@@ -2005,7 +2033,7 @@ html[data-theme="light"] .items-table-wrapper::-webkit-scrollbar-track {
 .report-box > *,
 .courier-card > *,
 .login-card > * {
-  transform: translateZ(12px);
+  transform: translateZ(4px);
 }
 
 .btn,
@@ -2013,12 +2041,12 @@ html[data-theme="light"] .items-table-wrapper::-webkit-scrollbar-track {
 .nav-item {
   position: relative;
   transition:
-    transform 220ms cubic-bezier(0.16, 1, 0.3, 1),
-    box-shadow 220ms ease,
-    filter 180ms ease,
-    background-color 180ms ease,
-    color 180ms ease,
-    border-color 180ms ease;
+    transform 180ms cubic-bezier(0.2, 0.8, 0.2, 1),
+    box-shadow 180ms ease,
+    filter 160ms ease,
+    background-color 160ms ease,
+    color 160ms ease,
+    border-color 160ms ease;
 }
 
 .btn:hover,
@@ -2031,7 +2059,7 @@ html[data-theme="light"] .items-table-wrapper::-webkit-scrollbar-track {
     perspective(700px)
     rotateX(var(--tilt-x, 0deg))
     rotateY(var(--tilt-y, 0deg))
-    translate3d(0, -3px, 8px);
+    translate3d(0, -1px, 3px);
 }
 
 .btn:active,
@@ -2076,7 +2104,7 @@ html[data-theme="light"] .items-table-wrapper::-webkit-scrollbar-track {
     perspective(900px)
     rotateX(var(--tilt-x, 0deg))
     rotateY(var(--tilt-y, 0deg))
-    translate3d(0, -2px, 8px);
+    translate3d(0, -1px, 3px);
 }
 
 @media (hover: none), (pointer: coarse) {
@@ -2101,8 +2129,8 @@ html[data-theme="light"] .items-table-wrapper::-webkit-scrollbar-track {
       perspective(800px)
       rotateX(var(--tilt-x, 0deg))
       rotateY(var(--tilt-y, 0deg))
-      translate3d(0, -1px, 4px)
-      scale(1.003);
+      translate3d(0, 0, 2px)
+      scale(1.001);
   }
 
   .stat-card.is-touching,

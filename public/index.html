@@ -727,10 +727,20 @@
                 <h3><i class="fa-brands fa-telegram text-primary"></i> Telegram Bot va Guruh Aloqasi Sozlamalari</h3>
               </div>
               <div class="card-body">
+                <div class="tg-setup-guide" role="note">
+                  <strong><i class="fa-solid fa-circle-info" aria-hidden="true"></i> Botni ishga tushirish tartibi</strong>
+                  <ol>
+                    <li><a href="https://t.me/BotFather" target="_blank" rel="noopener noreferrer">@BotFather</a> dan bot tokenini oling va pastdagi maydonga kiriting.</li>
+                    <li><b>Botni ulash / webhook o‘rnatish</b> tugmasini bosing — sozlamalar saqlanib, webhook ulanadi.</li>
+                    <li>Holat bo‘limidagi bot havolasini ochib, Telegramda botga <code>/start</code> yuboring.</li>
+                    <li>Bot qaytargan raqamli ID ni avval <b>Ega/Admin Telegram ID</b> maydoniga kiriting. Xodimlar jadvalida egasining qatoriga ham shu ID ni yozib, saqlang.</li>
+                  </ol>
+                  <p><b>Eslatma:</b> Yangi deploydan keyin webhookni shu sahifadagi “Saqlash va botni ulash” tugmasi bilan yangilang. Telegram ID olish uchun ulangan botga <code>/start</code> yuboring.</p>
+                </div>
                 <form id="tgSettingsForm" onsubmit="saveTgSettings(event)">
                   <div class="form-group">
-                    <label>Telegram Bot Token (BotFather bergan token):</label>
-                    <input type="text" id="tgBotToken" placeholder="Masalan: 7123456789:AAHk... (bo'sh bo'lsa simulyatsiya qilinadi)">
+                    <label>1. Telegram bot tokeni (BotFather bergan):</label>
+                    <input type="password" id="tgBotToken" autocomplete="new-password" placeholder="BotFather bergan token">
                     <small class="hint">@BotFather dan olingan bot tokeni</small>
                   </div>
 
@@ -747,9 +757,9 @@
                   </div>
 
                   <div class="form-group">
-                    <label>Ega/Admin Telegram ID (kunlik hisobotlar va buyurtma fayllari uchun):</label>
+                    <label>4. Ega/Admin Telegram ID (kunlik hisobot va Excel fayllari uchun):</label>
                     <input type="text" id="tgAdminId" inputmode="numeric" placeholder="Masalan: 123456789">
-                    <small class="hint">Telegramda botga /start yuboring; ID ni bot javobidan olib kiriting.</small>
+                    <small class="hint">Botga /start yuborgandan keyin javobda chiqqan raqamli ID ni shu yerga kiriting.</small>
                   </div>
 
                   <div class="form-group">
@@ -785,7 +795,7 @@
                   <div class="d-flex gap-2 mt-3">
                     <button type="submit" class="btn btn-primary"><i class="fa-solid fa-floppy-disk"></i> Sozlamalarni Saqlash</button>
                     <button type="button" class="btn btn-outline-primary" onclick="sendTestTelegram()"><i class="fa-paper-plane"></i> Test Xabar Yuborish</button>
-                    <button type="button" class="btn btn-outline-primary" onclick="setupTelegramWebhook()"><i class="fa-solid fa-plug"></i> Botni ulash / webhook o‘rnatish</button>
+                    <button type="button" class="btn btn-outline-primary" onclick="setupTelegramWebhook()"><i class="fa-solid fa-plug"></i> 2. Saqlash va botni ulash</button>
                   </div>
                 </form>
                 <div class="tg-status-box mt-3">
@@ -796,8 +806,8 @@
                   <div id="tgBotStatus" class="tg-info-text">Bot holati tekshirilmagan.</div>
                 </div>
                 <div class="mt-4">
-                  <h4>Telegram hisoblarini xodimlarga bog‘lash</h4>
-                  <p class="hint">Xodim Telegramda /start yuborib chiqqan raqamli ID ni shu yerda bog‘lang. Faqat admin bu sozlamani o‘zgartira oladi.</p>
+                  <h4>5. Telegram hisobini xodimga bog‘lash</h4>
+                  <p class="hint">Bot javobidagi ID ni kerakli xodim qatoriga kiriting va “Saqlash” ni bosing. Ega/Admin ID bilan egasining Telegram ID si bir xil bo‘lishi kerak.</p>
                   <div id="tgLinkedUsers" class="table-responsive"></div>
                 </div>
               </div>

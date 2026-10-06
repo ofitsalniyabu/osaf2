@@ -1,5 +1,6 @@
 // telegram.js - Telegram Bot API orqali guruhga yetkazish va kuryer xabarlari
 const axios = require('axios');
+const crypto = require('node:crypto');
 const { db } = require('./database');
 
 function escapeHtml(value) {
