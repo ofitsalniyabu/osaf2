@@ -1435,27 +1435,70 @@ async function viewOrderDetails(orderId) {
       `;
     }
 
+    const contactPhones = [ord.customer_phone, ord.phone2].filter(Boolean);
+    const customerPhoneLinks = contactPhones.length
+      ? contactPhones.map((phone, index) => `
+          <a href="tel:${escapeHtml(phone)}" class="order-detail-phone">${index === 1 ? 'Qo‘shimcha: ' : ''}${escapeHtml(phone)}</a>
+        `).join('<br>')
+      : '-';
+    const extraNotes = [
+      ord.courier_notes ? `<div><strong>Kuryer / yetkazish izohi:</strong> ${escapeHtml(ord.courier_notes)}</div>` : '',
+      currentUser?.role !== 'courier' && ord.admin_notes
+        ? `<div><strong>Ichki izoh:</strong> ${escapeHtml(ord.admin_notes)}</div>`
+        : ''
+    ].filter(Boolean).join('');
+
     const bodyHtml = `
-      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 20px;">
-        <div>
-          <h4>Mijoz: ${escapeHtml(ord.customer_name)}</h4>
-          <p>Telefon: <a href="tel:${escapeHtml(ord.customer_phone)}">${escapeHtml(ord.customer_phone)}</a> ${ord.phone2 ? `(${escapeHtml(ord.phone2)})` : ''}</p>
-          <p>Manzil: ${escapeHtml(ord.customer_address)}</p>
-          <p>Mo'ljal: ${escapeHtml(ord.landmark || 'Yo\'q')}</p>
-          <p>Yetkazuvchi: <b>${escapeHtml(ord.courier_deliv_name || 'Biriktirilmagan')}</b>${ord.courier_deliv_phone ? ` · <a href="tel:${escapeHtml(ord.courier_deliv_phone)}">${escapeHtml(ord.courier_deliv_phone)}</a>` : ''}</p>
-          ${navSection}
-          ${ord.defect_tags ? `<p style="margin-top: 6px;"><span class="status-pill status-bekor_qilindi">Belgilar: ${escapeHtml(ord.defect_tags)}</span></p>` : ''}
+      <section class="order-delivery-summary">
+        <div class="order-delivery-ids">
+          <span><small>Buyurtma ID</small><strong>#${Number(ord.id)}</strong></span>
+          <span><small>Buyurtma raqami</small><strong>${escapeHtml(ord.order_number || '-')}</strong></span>
+          <span><small>Mijoz ID</small><strong>#${escapeHtml(ord.customer_id ?? '-')}</strong></span>
         </div>
-        <div>
-          <h4>Buyurtma ma'lumotlari:</h4>
-          <p>Gilam olingan sana: <b>${escapeHtml(ord.pickup_date || ord.created_at || '-')}</b></p>
-          <p>Yetkazish muddati: <b>${escapeHtml(ord.target_delivery_date || '-')}</b></p>
-          <p>Yetkazilgan sana: <b>${escapeHtml(ord.delivered_date || '-')}</b></p>
-          <p>Jami maydon: <b>${ord.total_area ? ord.total_area.toFixed(2) : 0} m²</b> (${ord.total_items} ta buyum)</p>
-          <p>Hozirgi holati: ${getStatusPill(ord.status)}</p>
-          <p>To‘lov turi: <b>${escapeHtml(ord.payment_method || '-')}</b> · Holati: <b>${escapeHtml(ord.payment_status || '-')}</b></p>
-          ${ord.courier_notes ? `<p>Kuryer izohi: ${escapeHtml(ord.courier_notes)}</p>` : ''}
+        <div class="order-delivery-grid">
+          <div class="order-delivery-field">
+            <small>Qabul qiluvchi</small>
+            <strong>${escapeHtml(ord.customer_name || '-')}</strong>
+          </div>
+          <div class="order-delivery-field">
+            <small>Telefon raqami</small>
+            <div>${customerPhoneLinks}</div>
+          </div>
+          <div class="order-delivery-field">
+            <small>Gilam olingan sana</small>
+            <strong>${escapeHtml(ord.pickup_date || ord.created_at || '-')}</strong>
+          </div>
+          <div class="order-delivery-field">
+            <small>Yetkazish muddati</small>
+            <strong>${escapeHtml(ord.target_delivery_date || '-')}</strong>
+          </div>
+          <div class="order-delivery-field order-delivery-field-wide">
+            <small>Yetkazish manzili</small>
+            <strong>${escapeHtml(ord.customer_address || '-')}</strong>
+            ${ord.landmark ? `<span>Mo‘ljal: ${escapeHtml(ord.landmark)}</span>` : ''}
+            ${navSection}
+          </div>
+          <div class="order-delivery-field">
+            <small>Yetkazuvchi</small>
+            <strong>${escapeHtml(ord.courier_deliv_name || 'Biriktirilmagan')}</strong>
+            ${ord.courier_deliv_phone ? `<a href="tel:${escapeHtml(ord.courier_deliv_phone)}">${escapeHtml(ord.courier_deliv_phone)}</a>` : ''}
+          </div>
+          <div class="order-delivery-field">
+            <small>Buyurtma holati</small>
+            ${getStatusPill(ord.status)}
+          </div>
+          <div class="order-delivery-field order-delivery-field-wide">
+            <small>Qo‘shimcha izoh</small>
+            ${extraNotes || '<span>Izoh yo‘q</span>'}
+            ${ord.defect_tags ? `<span class="text-danger">Buyumdagi belgi: ${escapeHtml(ord.defect_tags)}</span>` : ''}
+          </div>
         </div>
+      </section>
+      <div style="display: flex; flex-wrap: wrap; gap: 12px 24px; margin-bottom: 18px;">
+        <span><strong>Yetkazilgan sana:</strong> ${escapeHtml(ord.delivered_date || '-')}</span>
+        <span><strong>Jami maydon:</strong> ${ord.total_area ? ord.total_area.toFixed(2) : 0} m² (${ord.total_items} ta buyum)</span>
+        <span><strong>To‘lov turi:</strong> ${escapeHtml(ord.payment_method || '-')}</span>
+        <span><strong>To‘lov holati:</strong> ${escapeHtml(ord.payment_status || '-')}</span>
       </div>
 
       ${(ord.handoffs || []).length ? `
