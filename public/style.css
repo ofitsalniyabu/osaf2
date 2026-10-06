@@ -204,11 +204,39 @@ body {
   transform: translateY(-50%);
 }
 
+.password-input-wrap {
+  position: relative;
+}
+
+.password-input-wrap .password-visibility-toggle {
+  position: absolute;
+  top: 50%;
+  right: 8px;
+  z-index: 1;
+  display: grid;
+  width: 36px;
+  height: 36px;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: 9px;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  transform: translateY(-50%);
+}
+
 .input-icon-wrap .password-visibility-toggle:hover,
-.input-icon-wrap .password-visibility-toggle:focus-visible {
+.input-icon-wrap .password-visibility-toggle:focus-visible,
+.password-input-wrap .password-visibility-toggle:hover,
+.password-input-wrap .password-visibility-toggle:focus-visible {
   background: rgba(225, 29, 72, 0.12);
   color: #fb7185;
   outline: none;
+}
+
+.password-input-wrap input {
+  padding-right: 48px !important;
 }
 
 .input-icon-wrap input[type="password"],

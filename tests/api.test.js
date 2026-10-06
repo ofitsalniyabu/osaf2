@@ -163,8 +163,11 @@ test('login page is served without exposing demo credentials', async () => {
   assert.match(html, /loginCaptchaImage/);
   assert.match(html, /amaldagi parollar hech kimga ko‘rsatilmaydi/i);
   const appScript = await request('/app.js');
-  assert.match(await appScript.text(), /Yangi vaqtinchalik parol/);
+  const appScriptText = await appScript.text();
+  assert.match(appScriptText, /Yangi vaqtinchalik parol/);
   assert.match(html, /quickCalcSizePresets/);
+  assert.match(appScriptText, /Yetkazib berish/);
+  assert.match(appScriptText, /Yetkazishga chiqish/);
   assert.doesNotMatch(html, /id="orderCourierAssignmentFields">[\s\S]*?id="custPhone"/);
   assert.doesNotMatch(html, /preset-sizes-bar|applyPresetToActiveRow/);
   assert.doesNotMatch(html, /fillLoginForm|admin123/);
@@ -226,7 +229,11 @@ test('unauthenticated API access is denied and login creates an HttpOnly session
   assert.match(owner.cookie, /HttpOnly/);
   assert.match(owner.cookie, /SameSite=Strict/);
   assert.match(owner.cookie, /;\s*Secure/);
+  assert.match(owner.cookie, /Max-Age=2592000/);
   ownerCookie = owner.cookie.split(';')[0];
+  const restoredSession = await request('/api/auth/me', { cookie: ownerCookie });
+  assert.equal(restoredSession.status, 200);
+  assert.equal((await restoredSession.json()).user.role, 'owner');
 });
 
 test('login requires a valid one-time CAPTCHA challenge', async () => {
@@ -301,7 +308,13 @@ test('couriers can only read assigned orders and cannot access owner data', asyn
   assert.equal(forbiddenOrder.status, 403);
   const ownOrder = await request('/api/orders/1', { cookie: courierCookie });
   assert.equal(ownOrder.status, 200);
-  assert.equal(Object.hasOwn((await ownOrder.json()).data, 'admin_notes'), false);
+  const ownOrderData = (await ownOrder.json()).data;
+  assert.equal(Object.hasOwn(ownOrderData, 'admin_notes'), false);
+  assert.equal(typeof ownOrderData.customer_name, 'string');
+  assert.equal(typeof ownOrderData.customer_phone, 'string');
+  assert.equal(typeof ownOrderData.customer_address, 'string');
+  assert.ok(ownOrderData.items.length > 0);
+  assert.equal(typeof ownOrderData.target_delivery_date, 'string');
   const forbiddenUpdate = await request('/api/orders/2/status', {
     cookie: courierCookie,
     method: 'PATCH',

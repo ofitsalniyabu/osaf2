@@ -1187,12 +1187,23 @@ function renderCourierDeliveries() {
 
   const courierFilter = document.getElementById('courierActiveSelect') ? document.getElementById('courierActiveSelect').value : 'all';
 
-  const orders = globalOrders.filter(o => {
+  const matchingOrders = globalOrders.filter(o => {
     if (courierFilter !== 'all') {
       return String(o.courier_pickup_id) === courierFilter || String(o.courier_delivery_id) === courierFilter;
     }
     return true;
   });
+  const orders = currentUser.role === 'courier'
+    ? matchingOrders
+      .filter(order => !['yetkazildi', 'bekor_qilindi'].includes(order.status))
+      .sort((left, right) => {
+        const leftDeliveryReady = left.courier_delivery_id === currentUser.id &&
+          ['tayyor', 'yetkazilmoqda'].includes(left.status);
+        const rightDeliveryReady = right.courier_delivery_id === currentUser.id &&
+          ['tayyor', 'yetkazilmoqda'].includes(right.status);
+        return Number(rightDeliveryReady) - Number(leftDeliveryReady) || right.id - left.id;
+      })
+    : matchingOrders;
 
   if (orders.length === 0) {
     container.innerHTML = `<div class="card p-4 text-center" style="grid-column: 1/-1; padding: 40px; color: var(--text-muted);">
@@ -1218,14 +1229,14 @@ function renderCourierDeliveries() {
       `;
     } else if (canManageDelivery && ord.status === 'tayyor') {
       deliveryAction = `
-        <button class="btn btn-primary" style="flex: 1.2;" onclick="quickUpdateStatus(${Number(ord.id)}, 'yetkazilmoqda')">
-          <i class="fa-solid fa-truck"></i> Yetkazishga chiqdim
+        <button class="btn btn-primary" style="flex: 1.2;" onclick="viewOrderDetails(${Number(ord.id)})">
+          <i class="fa-solid fa-truck"></i> Yetkazib berish
         </button>
       `;
     } else if (canManageDelivery && ord.status === 'yetkazilmoqda') {
       deliveryAction = `
-        <button class="btn btn-success" style="flex: 1.2;" onclick="quickUpdateStatus(${Number(ord.id)}, 'yetkazildi', ${Number(ord.final_amount)})">
-          <i class="fa-solid fa-check"></i> Yetkazdim va pulni oldim
+        <button class="btn btn-success" style="flex: 1.2;" onclick="viewOrderDetails(${Number(ord.id)})">
+          <i class="fa-solid fa-circle-info"></i> Yetkazish tafsilotlari
         </button>
       `;
     }
@@ -1429,6 +1440,7 @@ async function viewOrderDetails(orderId) {
           <p>Telefon: <a href="tel:${escapeHtml(ord.customer_phone)}">${escapeHtml(ord.customer_phone)}</a> ${ord.phone2 ? `(${escapeHtml(ord.phone2)})` : ''}</p>
           <p>Manzil: ${escapeHtml(ord.customer_address)}</p>
           <p>Mo'ljal: ${escapeHtml(ord.landmark || 'Yo\'q')}</p>
+          <p>Yetkazuvchi: <b>${escapeHtml(ord.courier_deliv_name || 'Biriktirilmagan')}</b>${ord.courier_deliv_phone ? ` · <a href="tel:${escapeHtml(ord.courier_deliv_phone)}">${escapeHtml(ord.courier_deliv_phone)}</a>` : ''}</p>
           ${navSection}
           ${ord.defect_tags ? `<p style="margin-top: 6px;"><span class="status-pill status-bekor_qilindi">Belgilar: ${escapeHtml(ord.defect_tags)}</span></p>` : ''}
         </div>
@@ -1436,8 +1448,11 @@ async function viewOrderDetails(orderId) {
           <h4>Buyurtma ma'lumotlari:</h4>
           <p>Qabul qilingan sana: ${escapeHtml(ord.pickup_date || '-')}</p>
           <p>Yetkazish muddati: <b>${escapeHtml(ord.target_delivery_date || '-')}</b></p>
+          <p>Yetkazilgan sana: <b>${escapeHtml(ord.delivered_date || '-')}</b></p>
           <p>Jami maydon: <b>${ord.total_area ? ord.total_area.toFixed(2) : 0} m²</b> (${ord.total_items} ta buyum)</p>
           <p>Hozirgi holati: ${getStatusPill(ord.status)}</p>
+          <p>To‘lov turi: <b>${escapeHtml(ord.payment_method || '-')}</b> · Holati: <b>${escapeHtml(ord.payment_status || '-')}</b></p>
+          ${ord.courier_notes ? `<p>Kuryer izohi: ${escapeHtml(ord.courier_notes)}</p>` : ''}
         </div>
       </div>
 
@@ -1543,6 +1558,14 @@ async function viewOrderDetails(orderId) {
 
     document.getElementById('modalOrderBody').innerHTML = bodyHtml;
 
+    const courierDeliveryActions = currentUser?.role === 'courier' &&
+      ord.courier_delivery_id === currentUser.id
+      ? ord.status === 'tayyor'
+        ? `<button class="btn btn-primary" onclick="updateDeliveryFromDetails(${Number(ord.id)}, 'yetkazilmoqda')"><i class="fa-solid fa-truck"></i> Yetkazishga chiqish</button>`
+        : ord.status === 'yetkazilmoqda'
+          ? `<button class="btn btn-success" onclick="updateDeliveryFromDetails(${Number(ord.id)}, 'yetkazildi', ${Number(ord.final_amount)})"><i class="fa-solid fa-check"></i> Yetkazildi va to‘lov olindi</button>`
+          : ''
+      : '';
     document.getElementById('modalOrderFooter').innerHTML = `
       ${currentUser && currentUser.role === 'owner' ? `
         <button class="btn btn-outline" style="color: var(--danger); margin-right: auto;" onclick="deleteOrderConfirm(${Number(ord.id)})">
@@ -1555,6 +1578,7 @@ async function viewOrderDetails(orderId) {
       <button class="btn btn-outline" onclick="downloadWordReceipt(${Number(ord.id)})">
         <i class="fa-solid fa-file-word text-primary"></i> Word Kvitansiya
       </button>
+      ${courierDeliveryActions}
       <button class="btn btn-primary" onclick="saveOrderDetailsChanges(${Number(ord.id)})">
         <i class="fa-solid fa-floppy-disk"></i> O'zgarishlarni Saqlash
       </button>
@@ -1564,6 +1588,11 @@ async function viewOrderDetails(orderId) {
   } catch (err) {
     console.error(err);
   }
+}
+
+async function updateDeliveryFromDetails(orderId, status, autoPayAmount = null) {
+  closeOrderModal();
+  await quickUpdateStatus(orderId, status, autoPayAmount);
 }
 
 async function saveOrderDetailsChanges(orderId) {

@@ -211,15 +211,61 @@ async function processTelegramUpdate(update) {
     } else if (command === '/help') {
       reply = 'Buyruqlar:\n/start — salomlashish va Telegram ID\n/id — Telegram ID raqamingiz\n/orders — buyurtmalar holati\n/admin — adminlar uchun holat paneli\n/help — yordam';
     } else if (command === '/admin') {
-      if (!user || user.status !== 'active' || !['owner', 'admin'].includes(user.role)) {
+      const configuredAdminId = (await getSetting('telegram_admin_id')) || process.env.TELEGRAM_ADMIN_ID || '';
+      const isConfiguredAdmin = String(telegramUser.id) === String(configuredAdminId);
+      const isPrivilegedUser = user && user.status === 'active' && ['owner', 'admin'].includes(user.role);
+      if ((!isConfiguredAdmin && !isPrivilegedUser) || updateMessage.chat.type && updateMessage.chat.type !== 'private') {
         reply = 'Bu buyruq faqat egasi va adminlar uchun. Buyurtmalaringiz uchun /orders yuboring.';
       } else {
-        const statuses = await db.all('SELECT status, COUNT(*) AS count FROM orders GROUP BY status ORDER BY status');
-        const total = statuses.reduce((sum, row) => sum + Number(row.count), 0);
-        const statusLines = statuses.map(row =>
-          `• ${escapeHtml(row.status)}: ${Number(row.count)}`
-        ).join('\n');
-        reply = `<b>OSAF admin holati</b>\nJami buyurtma: ${total}\n${statusLines || 'Hozircha buyurtma yo‘q'}\n\nTo‘liq boshqaruv paneli uchun pastdagi tugmani bosing.`;
+        const [stats, customers, couriers, latestOrders] = await Promise.all([
+          db.get(`
+            SELECT
+              COUNT(*) AS total_orders,
+              SUM(CASE WHEN status = 'yangi' THEN 1 ELSE 0 END) AS new_orders,
+              SUM(CASE WHEN status = 'qabul_qilindi' THEN 1 ELSE 0 END) AS accepted_orders,
+              SUM(CASE WHEN status IN ('yuvishda', 'quritishda') THEN 1 ELSE 0 END) AS washing_orders,
+              SUM(CASE WHEN status = 'tayyor' THEN 1 ELSE 0 END) AS ready_orders,
+              SUM(CASE WHEN status = 'yetkazilmoqda' THEN 1 ELSE 0 END) AS delivering_orders,
+              SUM(CASE WHEN status = 'yetkazildi' THEN 1 ELSE 0 END) AS delivered_orders,
+              SUM(CASE WHEN status = 'bekor_qilindi' THEN 1 ELSE 0 END) AS cancelled_orders,
+              COALESCE(SUM(CASE WHEN status <> 'bekor_qilindi' THEN final_amount ELSE 0 END), 0) AS revenue,
+              COALESCE(SUM(CASE WHEN status <> 'bekor_qilindi' THEN paid_amount ELSE 0 END), 0) AS paid,
+              COALESCE(SUM(CASE WHEN status <> 'bekor_qilindi' AND final_amount > paid_amount THEN final_amount - paid_amount ELSE 0 END), 0) AS debt,
+              COALESCE(SUM(total_items), 0) AS total_items,
+              COALESCE(SUM(total_area), 0) AS total_area
+            FROM orders
+          `),
+          db.get('SELECT COUNT(*) AS count FROM customers'),
+          db.get("SELECT COUNT(*) AS count FROM users WHERE role = 'courier' AND status = 'active'"),
+          db.all(`
+            SELECT o.order_number, o.status, o.final_amount, c.full_name AS customer_name
+            FROM orders o
+            JOIN customers c ON c.id = o.customer_id
+            ORDER BY o.id DESC
+            LIMIT 5
+          `)
+        ]);
+        const money = value => `${Number(value || 0).toLocaleString('uz-UZ')} so‘m`;
+        const recent = latestOrders.length
+          ? latestOrders.map(order =>
+            `• <b>${escapeHtml(order.order_number)}</b> — ${escapeHtml(order.customer_name)}, ${escapeHtml(order.status)}, ${money(order.final_amount)}`
+          ).join('\n')
+          : 'Buyurtmalar yo‘q';
+        reply = [
+          '<b>OSAF — to‘liq boshqaruv statistikasi</b>',
+          `Buyurtmalar jami: <b>${Number(stats.total_orders || 0)}</b>`,
+          `Yangi: ${Number(stats.new_orders || 0)} · Qabul qilindi: ${Number(stats.accepted_orders || 0)}`,
+          `Yuvish/quritish: ${Number(stats.washing_orders || 0)} · Tayyor: ${Number(stats.ready_orders || 0)}`,
+          `Yetkazilmoqda: ${Number(stats.delivering_orders || 0)} · Yetkazildi: ${Number(stats.delivered_orders || 0)}`,
+          `Bekor qilingan: ${Number(stats.cancelled_orders || 0)}`,
+          `Tushum: <b>${money(stats.revenue)}</b>`,
+          `To‘langan: ${money(stats.paid)} · Qoldiq: ${money(stats.debt)}`,
+          `Gilam/buyumlar: ${Number(stats.total_items || 0)} ta · Maydon: ${Number(stats.total_area || 0).toFixed(1)} m²`,
+          `Mijozlar: ${Number(customers.count || 0)} · Faol kuryerlar: ${Number(couriers.count || 0)}`,
+          '',
+          '<b>So‘nggi buyurtmalar:</b>',
+          recent
+        ].join('\n');
       }
     } else if (command === '/orders') {
       if (!user || user.status !== 'active') {

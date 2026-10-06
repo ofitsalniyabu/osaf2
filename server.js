@@ -13,7 +13,7 @@ const { hashPassword, verifyPassword } = require('./auth');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
-const SESSION_TTL_MS = 8 * 60 * 60 * 1000;
+const SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 
 app.disable('x-powered-by');
 if (process.env.VERCEL === '1') app.set('trust proxy', 1);
@@ -261,7 +261,7 @@ app.get('/api/auth/me', async (req, res) => {
     }
     const user = await db.get(
       'SELECT id, username, full_name, role, phone, car_model, car_number, status FROM users WHERE id = ?',
-      [session.userId]
+      [session.user_id]
     );
     if (!user || user.status !== 'active') {
       await db.run('DELETE FROM sessions WHERE token_hash = ?', [hashToken(token)]);

@@ -53,7 +53,7 @@ Mazkur tizim professional gilam yuvish korxonalari uchun maxsus ishlab chiqilgan
   - Qabul qilingan gilam va adyollarning o'lchamlari va soni;
   - Umumiy summa, to'langan mablag' va olinishi kerak bo'lgan qoldiq;
   - Biriktirilgan dastavchik ismi va telefon raqami.
-- Bot `/start` buyrug'ida foydalanuvchini kutib olib Telegram ID sini va ilovani ochish tugmasini ko'rsatadi; `/id` ID ni alohida chiqaradi, `/orders` buyurtmalarni role bo'yicha ko'rsatadi, `/admin` faqat ega/admin uchun buyurtmalar holatini chiqaradi.
+- Bot `/start` buyrug'ida foydalanuvchini kutib olib Telegram ID sini va ilovani ochish tugmasini ko'rsatadi; `/id` ID ni alohida chiqaradi, `/orders` buyurtmalarni role bo'yicha ko'rsatadi, `/admin` faqat ulangan ega/admin Telegram ID siga shaxsiy chatda batafsil buyurtma va moliyaviy statistikani chiqaradi.
 - Ega panelida bot webhook holati, navbatdagi xatolar, guruh/ega chat ID va xodimlarning Telegram ID bog'lanishi tekshiriladi.
 - Excel eksporti faqat avval eksport qilinmagan buyurtmalarni oladi. Muvaffaqiyatli eksport buyurtma ID'larini qayd etadi, keyingi faylga eski buyurtmalar takroran kiritilmaydi.
 - Vercel Cron kunlik Word va Excel hisobotlarni Toshkent vaqti bilan 20:00 da (15:00 UTC) ega Telegram ID va/yoki guruhga yuboradi. Kunlik Excel avval eksport qilinmagan buyurtmalarni qamrab oladi.
@@ -104,7 +104,7 @@ Vercel serverless muhitida mahalliy SQLite fayli doimiy saqlanmaydi. Loyiha Verc
 6. Vercel Environment Variables ichida `CRON_SECRET` ni uzun tasodifiy maxfiy qiymat qilib belgilang va deploy qiling; `vercel.json` kunlik 15:00 UTC cronni ro'yxatdan o'tkazadi. Egasi paneldagi Telegram sozlamalariga bot tokeni, kerak bo'lsa guruh chat ID va `https://osaf.vercel.app` ilova URL'sini kiritsin. **Saqlash va botni ulash** tugmasi sozlamalarni saqlaydi, Telegram webhookini o'rnatadi va bot buyruqlarini faollashtiradi.
 7. Bot holatida chiqqan bot havolasini ochib, Telegramda botga `/start` yuboring. Javobdagi raqamli Telegram ID ni `Ega/Admin Telegram ID` maydoniga kiriting, so'ng xodimlar jadvalidagi egasining qatoriga ham ayni ID ni bog'lang. Boshqa xodimlar ham botga `/start` yuborib, o'z ID sini tegishli xodim qatoriga bog'lashi kerak. Bot egaga birinchi bo'lib xabar yuborishi uchun ega avval botga `/start` yuborgan bo'lishi shart.
 
-Serverless so'rovlar orasida login sessiyalari PostgreSQL'da xeshlangan ko'rinishda saqlanadi, shuning uchun alohida function nusxalari bir sessiyani tanishi mumkin. Buyurtma, buyum, mijoz va avans yozuvlari bitta tranzaksiyada saqlanadi; tartib raqami ma'lumotlar bazasining atomar hisoblagichidan olinadi. PostgreSQL ulanish havzasi function nusxasida kichik (`PG_POOL_MAX=1`) saqlanadi; faqat provayder ulanish limiti yetarli bo'lsa o'zgartiring. PostgreSQL provayderining backup/PITR imkoniyatlarini alohida yoqing.
+Serverless so'rovlar orasida login sessiyalari PostgreSQL'da xeshlangan ko'rinishda saqlanadi, shuning uchun alohida function nusxalari bir sessiyani tanishi mumkin. Login cookie'si brauzer yopilgandan keyin ham qurilmada saqlanib, 30 kun davomida qayta login qilmasdan kirishga imkon beradi; egasi faol qurilmalar bo'limidan har qanday sessiyani bekor qilishi mumkin. Buyurtma, buyum, mijoz va avans yozuvlari bitta tranzaksiyada saqlanadi; tartib raqami ma'lumotlar bazasining atomar hisoblagichidan olinadi. PostgreSQL ulanish havzasi function nusxasida kichik (`PG_POOL_MAX=1`) saqlanadi; faqat provayder ulanish limiti yetarli bo'lsa o'zgartiring. PostgreSQL provayderining backup/PITR imkoniyatlarini alohida yoqing.
 
 ### Android APK
 
