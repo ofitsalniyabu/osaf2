@@ -53,7 +53,7 @@ Mazkur tizim professional gilam yuvish korxonalari uchun maxsus ishlab chiqilgan
   - Qabul qilingan gilam va adyollarning o'lchamlari va soni;
   - Umumiy summa, to'langan mablag' va olinishi kerak bo'lgan qoldiq;
   - Biriktirilgan dastavchik ismi va telefon raqami.
-- Bot `/start` buyrug'ida OSAF ilovasini ochish tugmasini ko'rsatadi; `/orders` kuryerga faqat o'z ishlarini, ega/operatorga buyurtmalar holatini chiqaradi.
+- Bot `/start` buyrug'ida foydalanuvchini kutib olib Telegram ID sini va ilovani ochish tugmasini ko'rsatadi; `/id` ID ni alohida chiqaradi, `/orders` buyurtmalarni role bo'yicha ko'rsatadi, `/admin` faqat ega/admin uchun buyurtmalar holatini chiqaradi.
 - Ega panelida bot webhook holati, navbatdagi xatolar, guruh/ega chat ID va xodimlarning Telegram ID bog'lanishi tekshiriladi.
 - Excel eksporti faqat avval eksport qilinmagan buyurtmalarni oladi. Muvaffaqiyatli eksport buyurtma ID'larini qayd etadi, keyingi faylga eski buyurtmalar takroran kiritilmaydi.
 - Vercel Cron kunlik Word va Excel hisobotlarni Toshkent vaqti bilan 20:00 da (15:00 UTC) ega Telegram ID va/yoki guruhga yuboradi. Kunlik Excel avval eksport qilinmagan buyurtmalarni qamrab oladi.

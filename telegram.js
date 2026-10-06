@@ -74,6 +74,8 @@ async function configureWebhook() {
   await callTelegramApi('setMyCommands', {
     commands: [
       { command: 'start', description: 'OSAF ilovasini ochish' },
+      { command: 'id', description: 'Telegram ID raqamingizni ko‘rish' },
+      { command: 'admin', description: 'Admin buyurtmalar holati' },
       { command: 'orders', description: 'Buyurtmalarim yoki buyurtmalar holati' },
       { command: 'help', description: 'Bot buyruqlari' }
     ]
@@ -202,10 +204,23 @@ async function processTelegramUpdate(update) {
 
     if (command === '/start') {
       reply = user && user.status === 'active'
-        ? `Assalomu alaykum, <b>${escapeHtml(user.full_name)}</b>! OSAF tizimiga xush kelibsiz.`
+        ? `Assalomu alaykum, <b>${escapeHtml(user.full_name)}</b>! OSAF tizimiga xush kelibsiz.\nTelegram ID: <code>${escapeHtml(telegramUser.id)}</code>`
         : `OSAF Gilam Yuvish botiga xush kelibsiz!\nTelegram ID: <code>${escapeHtml(telegramUser.id)}</code>\nAdmin ushbu ID ni xodim profilingizga bog‘lagach bot buyruqlari ochiladi.`;
+    } else if (command === '/id') {
+      reply = `Telegram ID raqamingiz: <code>${escapeHtml(telegramUser.id)}</code>`;
     } else if (command === '/help') {
-      reply = 'Buyruqlar:\n/start — ilova tugmasi va profilingiz\n/orders — buyurtmalar ro‘yxati\n/help — yordam';
+      reply = 'Buyruqlar:\n/start — salomlashish va Telegram ID\n/id — Telegram ID raqamingiz\n/orders — buyurtmalar holati\n/admin — adminlar uchun holat paneli\n/help — yordam';
+    } else if (command === '/admin') {
+      if (!user || user.status !== 'active' || !['owner', 'admin'].includes(user.role)) {
+        reply = 'Bu buyruq faqat egasi va adminlar uchun. Buyurtmalaringiz uchun /orders yuboring.';
+      } else {
+        const statuses = await db.all('SELECT status, COUNT(*) AS count FROM orders GROUP BY status ORDER BY status');
+        const total = statuses.reduce((sum, row) => sum + Number(row.count), 0);
+        const statusLines = statuses.map(row =>
+          `• ${escapeHtml(row.status)}: ${Number(row.count)}`
+        ).join('\n');
+        reply = `<b>OSAF admin holati</b>\nJami buyurtma: ${total}\n${statusLines || 'Hozircha buyurtma yo‘q'}\n\nTo‘liq boshqaruv paneli uchun pastdagi tugmani bosing.`;
+      }
     } else if (command === '/orders') {
       if (!user || user.status !== 'active') {
         reply = 'Botdan foydalanish uchun Telegram profilingizni tizimdagi xodim akkauntiga bog‘lash kerak. /start buyrug‘ini yuboring.';
@@ -244,7 +259,7 @@ async function processTelegramUpdate(update) {
       reply = 'Buyruq tushunilmadi. Buyruqlar ro‘yxati uchun /help yuboring.';
     }
 
-    if (command !== '/start' && user && user.status === 'active') markup = null;
+    if (!['/start', '/admin'].includes(command) && user && user.status === 'active') markup = null;
     await sendBotMessage(chatId, reply, markup);
     await logBotActivity(chatId, `IN: ${text}\nOUT: ${reply}`, 'bot_reply_sent');
     return { success: true };
