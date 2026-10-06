@@ -62,10 +62,18 @@ async function request(route, options = {}) {
 }
 
 async function login(username, password) {
+  const captchaResponse = await request('/api/auth/captcha');
+  assert.equal(captchaResponse.status, 200);
+  const captcha = (await captchaResponse.json()).data;
   const response = await request('/api/auth/login', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ username, password })
+    body: JSON.stringify({
+      username,
+      password,
+      captcha_id: captcha.id,
+      captcha_answer: captcha.test_answer
+    })
   });
   const data = await response.json();
   return { response, data, cookie: response.headers.get('set-cookie') };
@@ -111,10 +119,17 @@ before(async () => {
   const ownerMatch = output.match(/ega: ([A-Za-z0-9_-]+)/);
   const operatorMatch = output.match(/operator: ([A-Za-z0-9_-]+)/);
   const courierMatch = output.match(/kuryer1: ([A-Za-z0-9_-]+)/);
+  const secondCourierMatch = output.match(/kuryer2: ([A-Za-z0-9_-]+)/);
   assert.ok(ownerMatch, 'fresh database should print the one-time owner password');
   assert.ok(operatorMatch, 'fresh database should print the one-time operator password');
   assert.ok(courierMatch, 'fresh database should print the one-time courier password');
-  credentials = { owner: ownerMatch[1], operator: operatorMatch[1], courier: courierMatch[1] };
+  assert.ok(secondCourierMatch, 'fresh database should print the second courier password');
+  credentials = {
+    owner: ownerMatch[1],
+    operator: operatorMatch[1],
+    courier: courierMatch[1],
+    courier2: secondCourierMatch[1]
+  };
 
   const generatedCertPath = path.join(tempDirectory, '.toza-gilam', 'localhost-cert.pem');
   const generatedKeyPath = path.join(tempDirectory, '.toza-gilam', 'localhost-key.pem');
@@ -141,6 +156,9 @@ test('login page is served without exposing demo credentials', async () => {
   assert.match(html, /id="passwordModal"/);
   assert.match(html, /<div class="form-row" id="orderCourierAssignmentFields">[\s\S]*?id="orderPickupCourier"/);
   assert.match(html, /id="custPhone" required/);
+  assert.match(html, /password-visibility-toggle/);
+  assert.match(html, /loginCaptchaImage/);
+  assert.match(html, /quickCalcSizePresets/);
   assert.doesNotMatch(html, /id="orderCourierAssignmentFields">[\s\S]*?id="custPhone"/);
   assert.doesNotMatch(html, /preset-sizes-bar|applyPresetToActiveRow/);
   assert.doesNotMatch(html, /fillLoginForm|admin123/);
@@ -205,11 +223,47 @@ test('unauthenticated API access is denied and login creates an HttpOnly session
   ownerCookie = owner.cookie.split(';')[0];
 });
 
+test('login requires a valid one-time CAPTCHA challenge', async () => {
+  const challengeResponse = await request('/api/auth/captcha');
+  const challenge = (await challengeResponse.json()).data;
+  const missing = await request('/api/auth/login', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ username: 'ega', password: credentials.owner })
+  });
+  assert.equal(missing.status, 400);
+
+  const valid = await request('/api/auth/login', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      username: 'ega',
+      password: credentials.owner,
+      captcha_id: challenge.id,
+      captcha_answer: challenge.test_answer
+    })
+  });
+  assert.equal(valid.status, 200);
+
+  const replay = await request('/api/auth/login', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      username: 'ega',
+      password: credentials.owner,
+      captcha_id: challenge.id,
+      captcha_answer: challenge.test_answer
+    })
+  });
+  assert.equal(replay.status, 400);
+});
+
 test('Telegram send buttons accept bodyless POST requests', async () => {
   const telegramTest = await request('/api/telegram/test', {
     cookie: ownerCookie,
     method: 'POST'
   });
+
   assert.equal(telegramTest.status, 200);
   assert.equal((await telegramTest.json()).success, true);
 
@@ -253,6 +307,22 @@ test('couriers can only read assigned orders and cannot access owner data', asyn
   assert.equal((await request('/api/reports/excel', { cookie: courierCookie })).status, 403);
 });
 
+test('owner can inspect and revoke active device sessions without exposing passwords', async () => {
+  const response = await request('/api/sessions', { cookie: ownerCookie });
+  const sessions = await response.json();
+  assert.equal(response.status, 200);
+  assert.ok(sessions.data.some(session => session.role === 'owner'));
+  assert.ok(sessions.data.some(session => session.role === 'courier'));
+  assert.ok(sessions.data.every(session => !Object.hasOwn(session, 'password')));
+
+  const courierSession = sessions.data.find(session => session.role === 'courier');
+  const revoked = await request(`/api/sessions/${courierSession.session_id}`, {
+    cookie: ownerCookie,
+    method: 'DELETE'
+  });
+  assert.equal(revoked.status, 200);
+});
+
 test('operators cannot access owner-only settings or financial summaries', async () => {
   const operator = await login('operator', credentials.operator);
   assert.equal(operator.response.status, 200);
@@ -264,6 +334,23 @@ test('operators cannot access owner-only settings or financial summaries', async
   assert.equal(Object.hasOwn(stats.data, 'total_revenue'), false);
   assert.equal((await request('/api/settings', { cookie: operatorCookie })).status, 403);
   assert.equal((await request('/api/reports/excel', { cookie: operatorCookie })).status, 403);
+});
+
+test('owner can reset a staff password once and the old session is revoked', async () => {
+  const response = await request('/api/users/2/reset-password', {
+    cookie: ownerCookie,
+    method: 'POST'
+  });
+  assert.equal(response.status, 200);
+  const result = await response.json();
+  assert.equal(typeof result.temporary_password, 'string');
+  assert.ok(result.temporary_password.length >= 20);
+  assert.equal((await request('/api/stats', { cookie: operatorCookie })).status, 401);
+
+  const operator = await login('operator', result.temporary_password);
+  assert.equal(operator.response.status, 200);
+  operatorCookie = operator.cookie.split(';')[0];
+  credentials.operator = result.temporary_password;
 });
 
 test('owner Excel export keeps all report worksheets', async () => {
@@ -329,6 +416,16 @@ test('owner permissions and server-side service pricing are enforced', async () 
   const logsResponse = await request('/api/telegram/logs', { cookie: ownerCookie });
   const logs = await logsResponse.json();
   assert.match(logs.data[0].message, new RegExp(`Tartib raqami:<\\/b> <code>#${orderId}<\\/code>`));
+
+  const exported = await request('/api/reports/excel', { cookie: ownerCookie });
+  assert.equal(exported.status, 200);
+  assert.equal(exported.headers.get('x-exported-orders'), '1');
+  const workbook = new ExcelJS.Workbook();
+  await workbook.xlsx.load(Buffer.from(await exported.arrayBuffer()));
+  assert.equal(workbook.worksheets[0].getRow(2).getCell(2).value, createdData.orderNumber);
+
+  const duplicateExport = await request('/api/reports/excel', { cookie: ownerCookie });
+  assert.equal(duplicateExport.status, 204);
 });
 
 test('only active courier accounts can be assigned and assignment notifications stay valid', async () => {
@@ -393,6 +490,36 @@ test('couriers can register collected items and confirm delivery to the wash sho
   assert.equal(handoff.status, 200);
   const updatedOrder = await request(`/api/orders/${orderId}`, { cookie: ownerCookie });
   assert.equal((await updatedOrder.json()).data.status, 'qabul_qilindi');
+
+  const handedOver = await request(`/api/orders/${orderId}/handoff`, {
+    cookie: courierSession,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ assignment: 'pickup', to_courier_id: 4, notes: 'Boshqa mashinaga topshirildi' })
+  });
+  assert.equal(handedOver.status, 200);
+  const afterHandoff = await request(`/api/orders/${orderId}`, { cookie: ownerCookie });
+  const handedOrder = (await afterHandoff.json()).data;
+  assert.equal(handedOrder.courier_pickup_id, 4);
+  assert.equal(handedOrder.handoffs.length, 1);
+  assert.equal(handedOrder.handoffs[0].from_courier_name, 'Jasur Rustamov (Dastavchik #1)');
+  assert.equal((await request(`/api/orders/${orderId}`, { cookie: courierSession })).status, 403);
+});
+
+test('Telegram status is visible to the owner, webhook is protected, and daily cron requires a secret', async () => {
+  const status = await request('/api/telegram/status', { cookie: ownerCookie });
+  assert.equal(status.status, 200);
+  assert.equal((await status.json()).data.configured, false);
+
+  const blockedWebhook = await request('/api/telegram/webhook', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ update_id: 1 })
+  });
+  assert.equal(blockedWebhook.status, 403);
+
+  const blockedCron = await request('/api/cron/daily-reports');
+  assert.equal(blockedCron.status, 503);
 });
 
 test('users can change their own password without losing the active session', async () => {

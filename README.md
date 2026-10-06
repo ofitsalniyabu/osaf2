@@ -22,6 +22,7 @@ Mazkur tizim professional gilam yuvish korxonalari uchun maxsus ishlab chiqilgan
   - O'ziga biriktirilgan tayyor buyurtmalarni yetkazish ro'yxatida ko'rish.
   - Mijoz telefoniga 1 tugma bilan qo'ng'iroq qilish, manzil va mo'ljalni ko'rish.
   - Holatni tezkor o'zgartirish (*"Yetkazishga chiqdim"*, *"Yetkazdim va pulni oldim"*).
+  - O'ziga biriktirilgan olib ketish yoki yetkazish vazifasini izoh bilan boshqa faol kuryerga topshirish; topshirishlar buyurtma tarixida qayd etiladi.
 
 ---
 
@@ -52,6 +53,11 @@ Mazkur tizim professional gilam yuvish korxonalari uchun maxsus ishlab chiqilgan
   - Qabul qilingan gilam va adyollarning o'lchamlari va soni;
   - Umumiy summa, to'langan mablag' va olinishi kerak bo'lgan qoldiq;
   - Biriktirilgan dastavchik ismi va telefon raqami.
+- Bot `/start` buyrug'ida OSAF ilovasini ochish tugmasini ko'rsatadi; `/orders` kuryerga faqat o'z ishlarini, ega/operatorga buyurtmalar holatini chiqaradi.
+- Ega panelida bot webhook holati, navbatdagi xatolar, guruh/ega chat ID va xodimlarning Telegram ID bog'lanishi tekshiriladi.
+- Excel eksporti faqat avval eksport qilinmagan buyurtmalarni oladi. Muvaffaqiyatli eksport buyurtma ID'larini qayd etadi, keyingi faylga eski buyurtmalar takroran kiritilmaydi.
+- Vercel Cron kunlik Word va Excel hisobotlarni Toshkent vaqti bilan 20:00 da (15:00 UTC) ega Telegram ID va/yoki guruhga yuboradi. Kunlik Excel avval eksport qilinmagan buyurtmalarni qamrab oladi.
+- Egasi faol sessiya/qurilmalarni ko'rishi va bekor qilishi mumkin. Parollar qayta ko'rsatilmaydi; egasi xodim uchun yangi tasodifiy vaqtinchalik parol yaratishi mumkin.
 
 ---
 
@@ -82,6 +88,7 @@ Xodim qo'shishda kamida 8 belgili alohida parol kiriting. Parollar bazada scrypt
 - Kuryer yangi buyurtma kirita oladi; tizim uni avtomatik o'sha kuryerga biriktiradi. Kuryer buyurtmani faqat "Yangi"dan "Qabul qilindi"ga, ya'ni sexga topshirilganga o'tkazishi mumkin. Chegirma va oldindan to'lovni kuryer belgilay olmaydi.
 - Kuryer faqat o'ziga biriktirilgan buyurtmalarni ko'radi; tayyor buyurtmani yetkazish holatiga o'tkazadi va to'liq to'lov bilan topshirishni tasdiqlaydi.
 - API har bir so'rovda sessiya va rolni server tomonida tekshiradi. Buyurtmadagi narxlar xizmatlar katalogidan olinadi.
+- Kirish ekrani katta, qayta yangilanadigan, 5 daqiqa amal qiluvchi CAPTCHA tasviridan foydalanadi; kod bir martalik va IP sessiyasiga bog'langan. Muvaffaqiyatsiz parol urinishlari qo'shimcha ravishda 15 daqiqalik cheklov bilan himoyalanadi.
 
 Mavjud o'rnatmada eski parollar server ilk bor yangilangan kodek bilan ishga tushganda bir marta almashtirilishi mumkin. Bunday holatda yangi parollar server konsolida chiqadi. Mahalliy boshqa test bazasidan foydalanish uchun `CARPET_DB_PATH` muhit o'zgaruvchisini belgilang. Ishlab chiqarish muhitida faqat HTTPS ortidan ishga tushiring (`NODE_ENV=production`); sessiya cookie'si `Secure` bayrog'i bilan beriladi.
 
@@ -94,5 +101,19 @@ Vercel serverless muhitida mahalliy SQLite fayli doimiy saqlanmaydi. Loyiha Verc
 3. Yangi baza uchun `OWNER_USERNAME` va kamida 8 belgili `OWNER_PASSWORD` muhit o'zgaruvchilarini Vercel'da maxfiy saqlang. Hozirgi lokal owner loginidan foydalanmoqchi bo'lsangiz, `OWNER_USERNAME=abdulhamid09` qilib, o'zingizning parolingizni Vercel sozlamasiga kiriting; parolni kodga yoki chatga yozmang.
 4. Loyihani qayta deploy qiling. Ma'lumotlar bazasi sxemasi idempotent tarzda ishga tushadi, standart xizmat kategoriyalari sozlanadi, lekin namuna mijoz/buyurtmalar ishlab chiqarish bazasiga qo'shilmaydi. Birinchi ishga tushishdan keyin `/api/health` `{"success":true,"database":"postgres"}` javobini berishi kerak.
 5. Telegram bot va guruh sozlamalarini tizimga kirgandan keyin ilovadan kiriting. Lokal SQLite bazasi va Vercel PostgreSQL alohida saqlanadi; ularni bog'lash yoki ko'chirish uchun alohida import/export amali kerak.
+6. Vercel Environment Variables ichida `CRON_SECRET` ni uzun tasodifiy maxfiy qiymat qilib belgilang va deploy qiling; `vercel.json` kunlik 15:00 UTC cronni ro'yxatdan o'tkazadi. Telegram bot tokeni, guruh chat ID, ega Telegram ID va `https://osaf.vercel.app` ilova URL'sini egasi paneldan saqlab, **Botni ulash / webhook o'rnatish** tugmasini bosing.
+7. Har bir xodim botga `/start` yuboradi. Bot javobidagi Telegram ID ni paneldagi tegishli xodimga bog'lang. Ega Telegram ID sini hisobot sozlamasiga ham kiriting; Telegram bot egaga birinchi bo'lib xabar yuborishi uchun ega botda `/start` bosgan bo'lishi kerak.
 
 Serverless so'rovlar orasida login sessiyalari PostgreSQL'da xeshlangan ko'rinishda saqlanadi, shuning uchun alohida function nusxalari bir sessiyani tanishi mumkin. Buyurtma, buyum, mijoz va avans yozuvlari bitta tranzaksiyada saqlanadi; tartib raqami ma'lumotlar bazasining atomar hisoblagichidan olinadi. PostgreSQL ulanish havzasi function nusxasida kichik (`PG_POOL_MAX=1`) saqlanadi; faqat provayder ulanish limiti yetarli bo'lsa o'zgartiring. PostgreSQL provayderining backup/PITR imkoniyatlarini alohida yoqing.
+
+### Android APK
+
+Android ilova Capacitor WebView orqali ishlab turgan `https://osaf.vercel.app` saytiga ulanadi; server va internetga ulanish talab qilinadi. Android Studio hamda Android SDK (platforma/build tools) va JDK 21 o'rnatilgach, Windows PowerShell'da:
+
+```powershell
+npm install
+npm run android:sync
+npm run android:apk
+```
+
+Sinov uchun debug APK `android/app/build/outputs/apk/debug/app-debug.apk` yo'lida yaratiladi. Android Studio'da `android/` papkasini ochib APK build qilish mumkin. Play Store'ga joylash yoki rasmiy tarqatish uchun imzolangan release APK/AAB tayyorlang; `capacitor.config.json` ichidagi `server.url` ilovaning asosiy manzilidir.

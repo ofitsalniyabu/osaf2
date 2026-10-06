@@ -7,6 +7,25 @@ const { db } = require('./database');
 // Excel hisobot
 async function generateOrdersExcel(filter = {}) {
   const workbook = new ExcelJS.Workbook();
+  const orderConditions = [];
+  const orderParams = [];
+  if (Array.isArray(filter.orderIds)) {
+    if (!filter.orderIds.length) {
+      orderConditions.push('1 = 0');
+    } else {
+      orderConditions.push(`o.id IN (${filter.orderIds.map(() => '?').join(', ')})`);
+      orderParams.push(...filter.orderIds);
+    }
+  }
+  if (filter.start) {
+    orderConditions.push('o.created_at >= ?');
+    orderParams.push(filter.start);
+  }
+  if (filter.end) {
+    orderConditions.push('o.created_at < ?');
+    orderParams.push(filter.end);
+  }
+  const orderWhere = orderConditions.length ? `WHERE ${orderConditions.join(' AND ')}` : '';
   const orders = await db.all(`
     SELECT 
       o.id,
@@ -29,8 +48,9 @@ async function generateOrdersExcel(filter = {}) {
     FROM orders o
     JOIN customers c ON o.customer_id = c.id
     LEFT JOIN users u ON o.courier_delivery_id = u.id
+    ${orderWhere}
     ORDER BY o.id DESC
-  `);
+  `, orderParams);
 
   addWorksheet(workbook, 'Buyurtmalar Hisoboti', [
     ['№', 'number', 6],
@@ -87,8 +107,9 @@ async function generateOrdersExcel(filter = {}) {
     FROM order_items oi
     JOIN orders o ON oi.order_id = o.id
     JOIN customers c ON o.customer_id = c.id
+    ${orderConditions.length ? `WHERE ${orderConditions.map(condition => condition.replace(/\bo\./g, 'o.')).join(' AND ')}` : ''}
     ORDER BY oi.id DESC
-  `);
+  `, orderParams);
 
   addWorksheet(workbook, "Gilam va Adyollar Ro'yxati", [
     ['№', 'number', 6],
@@ -127,8 +148,19 @@ async function generateOrdersExcel(filter = {}) {
       t.description,
       t.created_at
     FROM transactions t
+    ${filter.start || filter.end || Array.isArray(filter.orderIds) ? `WHERE ${[
+      ...(Array.isArray(filter.orderIds)
+        ? [filter.orderIds.length ? `t.order_id IN (${filter.orderIds.map(() => '?').join(', ')})` : '1 = 0']
+        : []),
+      ...(filter.start ? ['t.created_at >= ?'] : []),
+      ...(filter.end ? ['t.created_at < ?'] : [])
+    ].join(' AND ')}` : ''}
     ORDER BY t.id DESC
-  `);
+  `, [
+    ...(Array.isArray(filter.orderIds) ? filter.orderIds : []),
+    ...(filter.start ? [filter.start] : []),
+    ...(filter.end ? [filter.end] : [])
+  ]);
 
   addWorksheet(workbook, 'Kassa va Xarajatlar', [
     ['ID', 'id', 8],
@@ -302,8 +334,55 @@ async function generateGeneralReportDocx() {
   return await Packer.toBuffer(doc);
 }
 
+async function generateDailyReportDocx(date, start, end) {
+  const stats = await db.get(`
+    SELECT
+      COUNT(*) AS total_orders,
+      SUM(CASE WHEN status = 'yetkazildi' THEN 1 ELSE 0 END) AS completed_orders,
+      SUM(CASE WHEN status NOT IN ('yetkazildi', 'bekor_qilindi') THEN 1 ELSE 0 END) AS active_orders,
+      COALESCE(SUM(final_amount), 0) AS total_revenue,
+      COALESCE(SUM(paid_amount), 0) AS total_paid,
+      COALESCE(SUM(total_area), 0) AS total_sqm
+    FROM orders
+    WHERE created_at >= ? AND created_at < ?
+  `, [start, end]);
+  const statuses = await db.all(`
+    SELECT status, COUNT(*) AS count FROM orders
+    WHERE created_at >= ? AND created_at < ?
+    GROUP BY status ORDER BY status
+  `, [start, end]);
+  const doc = new Document({
+    sections: [{
+      children: [
+        new Paragraph({
+          text: 'OSAF GILAM YUVISH — KUNLIK HISOBOT',
+          heading: HeadingLevel.HEADING_1,
+          alignment: AlignmentType.CENTER
+        }),
+        new Paragraph({ text: `Sana: ${date}`, alignment: AlignmentType.CENTER }),
+        new Paragraph({ text: ' ' }),
+        new Paragraph({ children: [new TextRun({ text: 'BUYURTMALAR:', bold: true, size: 24 })] }),
+        new Paragraph({ text: `• Yangi buyurtmalar: ${Number(stats.total_orders || 0)} ta` }),
+        new Paragraph({ text: `• Yetkazib berildi: ${Number(stats.completed_orders || 0)} ta` }),
+        new Paragraph({ text: `• Jarayonda: ${Number(stats.active_orders || 0)} ta` }),
+        new Paragraph({ text: `• Gilam va buyumlar maydoni: ${Number(stats.total_sqm || 0).toFixed(2)} m²` }),
+        new Paragraph({ text: `• Buyurtmalar jami: ${Number(stats.total_revenue || 0).toLocaleString()} so'm` }),
+        new Paragraph({ text: `• To'langan: ${Number(stats.total_paid || 0).toLocaleString()} so'm` }),
+        new Paragraph({ text: `• Qoldiq: ${(Number(stats.total_revenue || 0) - Number(stats.total_paid || 0)).toLocaleString()} so'm` }),
+        new Paragraph({ text: ' ' }),
+        new Paragraph({ children: [new TextRun({ text: 'Holatlar kesimida:', bold: true })] }),
+        ...statuses.map(row => new Paragraph({ text: `• ${row.status}: ${Number(row.count)} ta` })),
+        new Paragraph({ text: ' ' }),
+        new Paragraph({ text: 'Hisobot OSAF boshqaruv tizimi orqali avtomatik yaratildi.' })
+      ]
+    }]
+  });
+  return Packer.toBuffer(doc);
+}
+
 module.exports = {
   generateOrdersExcel,
   generateOrderDocx,
-  generateGeneralReportDocx
+  generateGeneralReportDocx,
+  generateDailyReportDocx
 };

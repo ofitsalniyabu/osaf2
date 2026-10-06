@@ -1,0 +1,16 @@
+{
+  "appId": "com.osaf.gilamyuvish",
+  "appName": "OSAF Gilam Yuvish",
+  "webDir": "public",
+  "server": {
+    "url": "https://osaf.vercel.app",
+    "cleartext": false,
+    "allowNavigation": [
+      "osaf.vercel.app"
+    ]
+  },
+  "android": {
+    "allowMixedContent": false,
+    "backgroundColor": "#09090d"
+  }
+}

@@ -24,6 +24,266 @@ async function setSetting(key, value) {
   `, [key, value]);
 }
 
+function getBotToken() {
+  return getSetting('bot_token').then(value => value || process.env.TELEGRAM_BOT_TOKEN || '');
+}
+
+async function getAppUrl() {
+  const configuredUrl = await getSetting('app_url');
+  const deploymentHost = process.env.VERCEL_URL;
+  return (configuredUrl || process.env.APP_BASE_URL ||
+    (deploymentHost ? `https://${deploymentHost}` : 'https://osaf.vercel.app')).replace(/\/+$/, '');
+}
+
+async function callTelegramApi(method, payload = {}) {
+  const token = await getBotToken();
+  if (!token) throw new Error('Telegram bot token sozlanmagan');
+  const response = await axios.post(`https://api.telegram.org/bot${token}/${method}`, payload, { timeout: 10000 });
+  if (!response.data || response.data.ok !== true) {
+    throw new Error(`Telegram ${method} so‘rovi bajarilmadi`);
+  }
+  return response.data.result;
+}
+
+async function configureWebhook() {
+  const token = await getBotToken();
+  if (!token) throw new Error('Avval Telegram bot tokenini kiriting');
+
+  const appUrl = await getAppUrl();
+  let parsedAppUrl;
+  try {
+    parsedAppUrl = new URL(appUrl);
+  } catch {
+    throw new Error('Ilova manzili noto‘g‘ri');
+  }
+  if (parsedAppUrl.protocol !== 'https:' || parsedAppUrl.username || parsedAppUrl.password) {
+    throw new Error('Telegram webhook uchun HTTPS manzil kiriting');
+  }
+
+  const webhookUrl = `${appUrl}/api/telegram/webhook`;
+  const existingSecret = await getSetting('telegram_webhook_secret');
+  const secret = existingSecret || crypto.randomBytes(32).toString('hex');
+  await setSetting('telegram_webhook_secret', secret);
+  await setSetting('app_url', appUrl);
+  await callTelegramApi('setWebhook', {
+    url: webhookUrl,
+    secret_token: secret,
+    allowed_updates: ['message']
+  });
+  await callTelegramApi('setMyCommands', {
+    commands: [
+      { command: 'start', description: 'OSAF ilovasini ochish' },
+      { command: 'orders', description: 'Buyurtmalarim yoki buyurtmalar holati' },
+      { command: 'help', description: 'Bot buyruqlari' }
+    ]
+  });
+  return { success: true, webhook_url: webhookUrl };
+}
+
+async function getBotStatus() {
+  const token = await getBotToken();
+  const appUrl = await getAppUrl();
+  const settings = await db.all(
+    "SELECT key, value FROM settings WHERE key IN ('group_chat_id', 'auto_send_telegram', 'telegram_webhook_secret', 'telegram_admin_id')"
+  );
+  const settingMap = Object.fromEntries(settings.map(setting => [setting.key, setting.value]));
+  const result = {
+    configured: Boolean(token),
+    app_url: appUrl,
+    webhook_url: `${appUrl}/api/telegram/webhook`,
+    group_chat_configured: Boolean(settingMap.group_chat_id),
+    admin_chat_configured: Boolean(settingMap.telegram_admin_id),
+    auto_send: settingMap.auto_send_telegram === 'true',
+    linked_users: Number((await db.get("SELECT COUNT(*) AS count FROM users WHERE telegram_id IS NOT NULL AND telegram_id <> ''"))?.count || 0),
+    bot: null,
+    webhook: null,
+    error: null
+  };
+  if (!token) return result;
+  try {
+    const [bot, webhook] = await Promise.all([
+      callTelegramApi('getMe'),
+      callTelegramApi('getWebhookInfo')
+    ]);
+    result.bot = { id: bot.id, username: bot.username, first_name: bot.first_name };
+    result.webhook = {
+      url: webhook.url,
+      pending_update_count: webhook.pending_update_count || 0,
+      last_error_date: webhook.last_error_date || null,
+      last_error_message: webhook.last_error_message || null
+    };
+  } catch (error) {
+    result.error = error.message;
+  }
+  return result;
+}
+
+async function sendBotMessage(chatId, text, replyMarkup) {
+  return callTelegramApi('sendMessage', {
+    chat_id: chatId,
+    text,
+    parse_mode: 'HTML',
+    ...(replyMarkup ? { reply_markup: replyMarkup } : {})
+  });
+}
+
+async function sendDocument(chatId, fileName, buffer, caption) {
+  const token = await getBotToken();
+  if (!token) throw new Error('Telegram bot token sozlanmagan');
+  const form = new FormData();
+  form.append('chat_id', String(chatId));
+  form.append('caption', caption);
+  form.append('document', new Blob([buffer]), fileName);
+  const response = await axios.post(
+    `https://api.telegram.org/bot${token}/sendDocument`,
+    form,
+    { timeout: 30000 }
+  );
+  if (!response.data || response.data.ok !== true) {
+    throw new Error('Telegram hisobot faylini qabul qilmadi');
+  }
+  await logBotActivity(chatId, `${caption} — ${fileName}`, 'document_sent');
+  return response.data.result;
+}
+
+async function sendReportsToAdmins(files, caption) {
+  const recipients = new Set();
+  const configuredAdminId = (await getSetting('telegram_admin_id')) || process.env.TELEGRAM_ADMIN_ID;
+  const groupId = (await getSetting('group_chat_id')) || process.env.TELEGRAM_CHAT_ID;
+  if (configuredAdminId) recipients.add(configuredAdminId);
+  if (groupId) recipients.add(groupId);
+  const owners = await db.all(`
+    SELECT telegram_id FROM users
+    WHERE role = 'owner' AND status = 'active' AND telegram_id IS NOT NULL AND telegram_id <> ''
+  `);
+  owners.forEach(owner => recipients.add(owner.telegram_id));
+  if (!recipients.size) return { sent: false, simulated: true, recipients: [] };
+
+  for (const recipient of recipients) {
+    for (const file of files) await sendDocument(recipient, file.name, file.buffer, caption);
+  }
+  return { sent: true, simulated: false, recipients: [...recipients] };
+}
+
+async function logBotActivity(chatId, message, status) {
+  await db.run(
+    'INSERT INTO telegram_logs (chat_id, message, status) VALUES (?, ?, ?)',
+    [String(chatId), message, status]
+  );
+}
+
+async function processTelegramUpdate(update) {
+  if (!update || !Number.isSafeInteger(update.update_id)) return { ignored: true };
+  const updateMessage = update.message;
+  const chatId = updateMessage && updateMessage.chat && updateMessage.chat.id;
+  const telegramUser = updateMessage && updateMessage.from;
+  const text = updateMessage && typeof updateMessage.text === 'string' ? updateMessage.text.trim() : '';
+  if (!chatId || !telegramUser || !text) return { ignored: true };
+
+  const reserved = await db.run(
+    'INSERT INTO telegram_updates (update_id) VALUES (?) ON CONFLICT(update_id) DO NOTHING',
+    [update.update_id]
+  );
+  if (!reserved.changes) return { duplicate: true };
+
+  try {
+    const user = await db.get(
+      "SELECT id, full_name, role, status FROM users WHERE telegram_id = ?",
+      [String(telegramUser.id)]
+    );
+    const command = text.split(/\s+/)[0].split('@')[0].toLowerCase();
+    const appUrl = await getAppUrl();
+    const appButton = {
+      inline_keyboard: [[{ text: 'OSAF ilovasini ochish', url: appUrl }]]
+    };
+    let reply;
+    let markup = appButton;
+
+    if (command === '/start') {
+      reply = user && user.status === 'active'
+        ? `Assalomu alaykum, <b>${escapeHtml(user.full_name)}</b>! OSAF tizimiga xush kelibsiz.`
+        : `OSAF Gilam Yuvish botiga xush kelibsiz!\nTelegram ID: <code>${escapeHtml(telegramUser.id)}</code>\nAdmin ushbu ID ni xodim profilingizga bog‘lagach bot buyruqlari ochiladi.`;
+    } else if (command === '/help') {
+      reply = 'Buyruqlar:\n/start — ilova tugmasi va profilingiz\n/orders — buyurtmalar ro‘yxati\n/help — yordam';
+    } else if (command === '/orders') {
+      if (!user || user.status !== 'active') {
+        reply = 'Botdan foydalanish uchun Telegram profilingizni tizimdagi xodim akkauntiga bog‘lash kerak. /start buyrug‘ini yuboring.';
+      } else if (user.role === 'courier') {
+        const orders = await db.all(`
+          SELECT o.order_number, o.status, c.full_name AS customer_name, c.address AS customer_address
+          FROM orders o
+          JOIN customers c ON c.id = o.customer_id
+          WHERE (o.courier_pickup_id = ? OR o.courier_delivery_id = ?)
+            AND o.status NOT IN ('yetkazildi', 'bekor_qilindi')
+          ORDER BY o.id DESC LIMIT 10
+        `, [user.id, user.id]);
+        reply = orders.length
+          ? `<b>Sizga biriktirilgan faol buyurtmalar:</b>\n${orders.map(order =>
+            `• <b>${escapeHtml(order.order_number)}</b> — ${escapeHtml(order.status)}\n  ${escapeHtml(order.customer_name)}, ${escapeHtml(order.customer_address)}`
+          ).join('\n')}`
+          : 'Sizga hozircha faol buyurtma biriktirilmagan.';
+      } else if (user.role === 'owner' || user.role === 'admin') {
+        const statuses = await db.all('SELECT status, COUNT(*) AS count FROM orders GROUP BY status ORDER BY status');
+        const orders = await db.all(`
+          SELECT o.order_number, o.status, c.full_name AS customer_name
+          FROM orders o JOIN customers c ON c.id = o.customer_id
+          ORDER BY o.id DESC LIMIT 8
+        `);
+        const statusLines = statuses.map(row =>
+          `• ${escapeHtml(row.status)}: ${Number(row.count)}`
+        ).join('\n');
+        const recentOrders = orders.map(order =>
+          `• <b>${escapeHtml(order.order_number)}</b> — ${escapeHtml(order.status)}, ${escapeHtml(order.customer_name)}`
+        ).join('\n');
+        reply = `<b>Buyurtmalar holati (${statuses.reduce((sum, row) => sum + Number(row.count), 0)} ta):</b>\n${statusLines || 'Buyurtma yo‘q'}\n\n<b>So‘nggi buyurtmalar:</b>\n${recentOrders || 'Buyurtma yo‘q'}`;
+      } else {
+        reply = 'Ushbu profil uchun bot buyruqlari mavjud emas.';
+      }
+    } else {
+      reply = 'Buyruq tushunilmadi. Buyruqlar ro‘yxati uchun /help yuboring.';
+    }
+
+    if (command !== '/start' && user && user.status === 'active') markup = null;
+    await sendBotMessage(chatId, reply, markup);
+    await logBotActivity(chatId, `IN: ${text}\nOUT: ${reply}`, 'bot_reply_sent');
+    return { success: true };
+  } catch (error) {
+    await db.run('DELETE FROM telegram_updates WHERE update_id = ?', [update.update_id]);
+    await logBotActivity(chatId, `IN: ${text}\nERROR: ${error.message}`, 'bot_reply_failed');
+    throw error;
+  }
+}
+
+async function notifyCourierHandoff(order, assignment, fromCourier, toCourier, notes) {
+  const assignmentName = assignment === 'pickup' ? 'Olib ketish' : 'Mijozga yetkazish';
+  const noteText = notes ? `\nIzoh: ${escapeHtml(notes)}` : '';
+  const message = `🔁 <b>Buyurtma kuryerga topshirildi</b>\n${escapeHtml(order.order_number)}\nBosqich: ${assignmentName}\nKimdan: ${escapeHtml(fromCourier.full_name)}\nKimga: ${escapeHtml(toCourier.full_name)}${noteText}`;
+  const appUrl = await getAppUrl();
+  const results = [];
+  for (const courier of [fromCourier, toCourier]) {
+    if (!courier.telegram_id) {
+      results.push({
+        courier_id: courier.id,
+        success: false,
+        skipped: true,
+        error: 'Telegram profili bog‘lanmagan'
+      });
+      continue;
+    }
+    try {
+      await sendBotMessage(courier.telegram_id, message, {
+        inline_keyboard: [[{ text: 'Buyurtmani ilovada ko‘rish', url: `${appUrl}` }]]
+      });
+      await logBotActivity(courier.telegram_id, message, 'handoff_notice_sent');
+      results.push({ courier_id: courier.id, success: true });
+    } catch (error) {
+      await logBotActivity(courier.telegram_id, message, `handoff_notice_failed: ${error.message}`);
+      results.push({ courier_id: courier.id, success: false, error: error.message });
+    }
+  }
+  return results;
+}
+
 // Telegram guruhiga yoki kanalga xabar yuborish
 async function sendTelegramMessage(text, parseMode = 'HTML', locationObj = null) {
   const token = (await getSetting('bot_token')) || process.env.TELEGRAM_BOT_TOKEN;
@@ -183,5 +443,10 @@ module.exports = {
   sendTelegramMessage,
   formatOrderMessage,
   getSetting,
-  setSetting
+  setSetting,
+  configureWebhook,
+  getBotStatus,
+  processTelegramUpdate,
+  notifyCourierHandoff,
+  sendReportsToAdmins
 };

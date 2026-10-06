@@ -50,6 +50,8 @@ app.use('/api', (req, res, next) => {
   const bodylessPost = req.method === 'POST' &&
     (req.path === '/auth/logout' ||
      req.path === '/telegram/test' ||
+     req.path === '/telegram/setup' ||
+     /^\/users\/\d+\/reset-password$/.test(req.path) ||
      /^\/orders\/\d+\/send-telegram$/.test(req.path));
   const requiresBody = ['POST', 'PUT', 'PATCH'].includes(req.method) && !bodylessPost;
   const hasInvalidBody = hasRequestBody &&
@@ -90,6 +92,87 @@ function canAccessOrder(user, order) {
     order.courier_delivery_id === user.id;
 }
 
+function getTashkentDayRange(now = new Date()) {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Tashkent',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit'
+  }).formatToParts(now);
+  const values = Object.fromEntries(parts.map(part => [part.type, part.value]));
+  const year = Number(values.year);
+  const month = Number(values.month);
+  const day = Number(values.day);
+  const date = `${values.year}-${values.month}-${values.day}`;
+  const start = new Date(Date.UTC(year, month - 1, day) - 5 * 60 * 60 * 1000);
+  const end = new Date(Date.UTC(year, month - 1, day + 1) - 5 * 60 * 60 * 1000);
+  const toDatabaseTimestamp = value => value.toISOString().slice(0, 19).replace('T', ' ');
+  return { date, start: toDatabaseTimestamp(start), end: toDatabaseTimestamp(end) };
+}
+
+async function claimUnexportedOrders(batchId, exportedBy = null) {
+  return db.transaction(async transaction => {
+    const pending = await transaction.all(`
+      SELECT o.id FROM orders o
+      LEFT JOIN order_exports e ON e.order_id = o.id
+      WHERE e.order_id IS NULL
+      ORDER BY o.id ASC
+    `);
+    const claimed = [];
+    for (const order of pending) {
+      const result = await transaction.run(`
+        INSERT INTO order_exports (order_id, batch_id, exported_by)
+        VALUES (?, ?, ?)
+        ON CONFLICT(order_id) DO NOTHING
+      `, [order.id, batchId, exportedBy]);
+      if (result.changes === 1) claimed.push(order.id);
+    }
+    return claimed;
+  });
+}
+
+async function releaseExportClaim(batchId) {
+  await db.run('DELETE FROM order_exports WHERE batch_id = ?', [batchId]);
+}
+
+app.get('/api/auth/captcha', async (req, res) => {
+  try {
+    const now = Date.now();
+    await db.run('DELETE FROM login_captchas WHERE expires_at <= ?', [now]);
+    const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+    const answer = Array.from({ length: 5 }, () => alphabet[crypto.randomInt(alphabet.length)]).join('');
+    const challengeId = crypto.randomBytes(24).toString('base64url');
+    const ipHash = hashToken(req.ip || req.socket.remoteAddress || 'unknown');
+    const answerHash = hashToken(`${challengeId}:${answer.toLowerCase()}`);
+    const characters = answer.split('').map((character, index) => {
+      const x = 38 + index * 48;
+      const rotation = crypto.randomInt(-16, 17);
+      const y = crypto.randomInt(48, 72);
+      return `<text x="${x}" y="${y}" transform="rotate(${rotation} ${x} ${y})">${character}</text>`;
+    }).join('');
+    const lines = Array.from({ length: 7 }, () => {
+      const x1 = crypto.randomInt(0, 280);
+      const y1 = crypto.randomInt(0, 90);
+      const x2 = crypto.randomInt(0, 280);
+      const y2 = crypto.randomInt(0, 90);
+      return `<path d="M${x1} ${y1}L${x2} ${y2}"/>`;
+    }).join('');
+    const dots = Array.from({ length: 35 }, () =>
+      `<circle cx="${crypto.randomInt(0, 280)}" cy="${crypto.randomInt(0, 90)}" r="${crypto.randomInt(1, 3)}"/>`
+    ).join('');
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="280" height="90" viewBox="0 0 280 90"><rect width="280" height="90" rx="14" fill="#111827"/><g fill="none" stroke="#64748b" stroke-width="1">${lines}</g><g fill="#94a3b8">${dots}</g><g fill="#fff" font-family="monospace" font-size="40" font-weight="700" letter-spacing="4">${characters}</g></svg>`;
+    await db.run(`
+      INSERT INTO login_captchas (challenge_id, ip_hash, answer_hash, expires_at, attempts)
+      VALUES (?, ?, ?, ?, 0)
+    `, [challengeId, ipHash, answerHash, now + 5 * 60 * 1000]);
+    const challenge = { id: challengeId, image: `data:image/svg+xml;base64,${Buffer.from(svg).toString('base64')}` };
+    if (process.env.NODE_ENV === 'test') challenge.test_answer = answer;
+    res.json({ success: true, data: challenge });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
 // ================= LOGIN VA AUTORIZATSIYA =================
 app.post('/api/auth/login', async (req, res) => {
   try {
@@ -97,6 +180,31 @@ app.post('/api/auth/login', async (req, res) => {
     const password = typeof req.body.password === 'string' ? req.body.password : '';
     const now = Date.now();
     const loginIpHash = hashToken(req.ip || req.socket.remoteAddress || 'unknown');
+    const captchaId = typeof req.body.captcha_id === 'string' ? req.body.captcha_id : '';
+    const captchaAnswer = typeof req.body.captcha_answer === 'string'
+      ? req.body.captcha_answer.trim().toLowerCase()
+      : '';
+    const captcha = captchaId && await db.get(
+      'SELECT answer_hash, ip_hash, expires_at, attempts FROM login_captchas WHERE challenge_id = ?',
+      [captchaId]
+    );
+    if (!captcha || captcha.ip_hash !== loginIpHash || captcha.expires_at <= now || captcha.attempts >= 5) {
+      if (captchaId) await db.run('DELETE FROM login_captchas WHERE challenge_id = ?', [captchaId]);
+      return res.status(400).json({ success: false, error: 'Tekshirish rasmi eskirgan. Yangi kod oling.' });
+    }
+    const suppliedCaptchaHash = Buffer.from(hashToken(`${captchaId}:${captchaAnswer}`), 'hex');
+    const storedCaptchaHash = Buffer.from(captcha.answer_hash, 'hex');
+    if (suppliedCaptchaHash.length !== storedCaptchaHash.length ||
+        !crypto.timingSafeEqual(suppliedCaptchaHash, storedCaptchaHash)) {
+      const nextAttempts = captcha.attempts + 1;
+      if (nextAttempts >= 5) {
+        await db.run('DELETE FROM login_captchas WHERE challenge_id = ?', [captchaId]);
+      } else {
+        await db.run('UPDATE login_captchas SET attempts = ? WHERE challenge_id = ?', [nextAttempts, captchaId]);
+      }
+      return res.status(400).json({ success: false, error: 'Tekshirish kodi noto‘g‘ri. Yangi rasmni tekshirib qayta kiriting.' });
+    }
+    await db.run('DELETE FROM login_captchas WHERE challenge_id = ?', [captchaId]);
     const attempts = await db.get('SELECT attempts, first_attempt FROM login_attempts WHERE ip_hash = ?', [loginIpHash]);
     const attemptsWindowExpired = attempts && now - attempts.first_attempt >= 15 * 60 * 1000;
     if (attempts && !attemptsWindowExpired && attempts.attempts >= 10) {
@@ -128,8 +236,8 @@ app.post('/api/auth/login', async (req, res) => {
     const expiresAt = Date.now() + SESSION_TTL_MS;
     await db.run('DELETE FROM sessions WHERE expires_at <= ?', [now]);
     await db.run(
-      'INSERT INTO sessions (token_hash, user_id, expires_at) VALUES (?, ?, ?)',
-      [hashToken(token), user.id, expiresAt]
+      'INSERT INTO sessions (token_hash, user_id, expires_at, user_agent, ip_address) VALUES (?, ?, ?, ?, ?)',
+      [hashToken(token), user.id, expiresAt, String(req.get('user-agent') || '').slice(0, 500), String(req.ip || '').slice(0, 100)]
     );
     setSessionCookie(res, token, SESSION_TTL_MS / 1000);
     delete user.password;
@@ -186,6 +294,61 @@ app.get('/api/health', async (req, res, next) => {
   }
 });
 
+app.post('/api/telegram/webhook', async (req, res) => {
+  try {
+    const expectedSecret = await telegram.getSetting('telegram_webhook_secret');
+    const receivedSecret = req.get('x-telegram-bot-api-secret-token') || '';
+    const expectedBuffer = Buffer.from(expectedSecret || '');
+    const receivedBuffer = Buffer.from(receivedSecret);
+    if (!expectedSecret || expectedBuffer.length !== receivedBuffer.length ||
+        !crypto.timingSafeEqual(expectedBuffer, receivedBuffer)) {
+      return res.status(403).json({ success: false, error: 'Telegram webhook maxfiy kaliti noto‘g‘ri' });
+    }
+    const result = await telegram.processTelegramUpdate(req.body);
+    res.json({ success: true, ...result });
+  } catch (error) {
+    console.error('Telegram webhook xatosi:', error.message);
+    res.status(500).json({ success: false, error: 'Telegram yangilanishini qayta ishlashda xato' });
+  }
+});
+
+app.get('/api/cron/daily-reports', async (req, res) => {
+  const secret = process.env.CRON_SECRET || '';
+  const authorization = req.get('authorization') || '';
+  const expected = Buffer.from(`Bearer ${secret}`);
+  const provided = Buffer.from(authorization);
+  if (!secret || expected.length !== provided.length ||
+      !crypto.timingSafeEqual(expected, provided)) {
+    return res.status(secret ? 401 : 503).json({ success: false, error: 'Hisobot cron kaliti sozlanmagan yoki noto‘g‘ri' });
+  }
+  try {
+    const range = getTashkentDayRange();
+    const batchId = `daily-${range.date}-${crypto.randomUUID()}`;
+    const orderIds = await claimUnexportedOrders(batchId);
+    try {
+      const [excel, word] = await Promise.all([
+        reports.generateOrdersExcel({ orderIds }),
+        reports.generateDailyReportDocx(range.date, range.start, range.end)
+      ]);
+      const delivery = await telegram.sendReportsToAdmins([
+        { name: `OSAF_Kunlik_${range.date}.xlsx`, buffer: excel },
+        { name: `OSAF_Kunlik_${range.date}.docx`, buffer: word }
+      ], `OSAF kunlik hisobot — ${range.date}; Excel ichida ${orderIds.length} yangi eksport qilinmagan buyurtma.`);
+      if (delivery.simulated) {
+        await releaseExportClaim(batchId);
+        return res.status(503).json({ success: false, error: 'Telegram bot tokeni yoki ega/admin chat ID si sozlanmagan' });
+      }
+      res.json({ success: true, date: range.date, exported_orders: orderIds.length, recipients: delivery.recipients });
+    } catch (error) {
+      await releaseExportClaim(batchId);
+      throw error;
+    }
+  } catch (error) {
+    console.error('Kunlik Telegram hisobotini yuborish xatosi:', error.message);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
 app.use('/api', async (req, res, next) => {
   const token = getSessionToken(req);
   const tokenHash = token && hashToken(token);
@@ -213,6 +376,64 @@ app.use('/api', async (req, res, next) => {
     next();
   } catch (err) {
     next(err);
+  }
+});
+
+app.get('/api/sessions', async (req, res) => {
+  if (req.user.role !== 'owner') {
+    return res.status(403).json({ success: false, error: 'Faol qurilmalarni faqat egasi ko‘ra oladi' });
+  }
+  try {
+    const sessions = await db.all(`
+      SELECT s.token_hash AS session_id, s.user_id, s.created_at, s.expires_at, s.user_agent, s.ip_address,
+        u.username, u.full_name, u.role
+      FROM sessions s JOIN users u ON u.id = s.user_id
+      WHERE s.expires_at > ?
+      ORDER BY s.created_at DESC
+    `, [Date.now()]);
+    res.json({ success: true, data: sessions });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+app.delete('/api/sessions/:sessionId', async (req, res) => {
+  if (req.user.role !== 'owner') {
+    return res.status(403).json({ success: false, error: 'Faol qurilmalarni faqat egasi boshqara oladi' });
+  }
+  try {
+    if (!/^[a-f0-9]{64}$/.test(req.params.sessionId)) {
+      return res.status(400).json({ success: false, error: 'Sessiya raqami noto‘g‘ri' });
+    }
+    const removed = await db.run('DELETE FROM sessions WHERE token_hash = ?', [req.params.sessionId]);
+    if (!removed.changes) return res.status(404).json({ success: false, error: 'Faol sessiya topilmadi' });
+    res.json({ success: true, message: 'Qurilma tizimdan chiqarildi' });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+app.delete('/api/sessions', async (req, res) => {
+  if (req.user.role !== 'owner') {
+    return res.status(403).json({ success: false, error: 'Faol qurilmalarni faqat egasi boshqara oladi' });
+  }
+  try {
+    const removed = await db.run('DELETE FROM sessions WHERE user_id <> ?', [req.user.id]);
+    res.json({ success: true, revoked: removed.changes });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+app.delete('/api/users/:id/sessions', async (req, res) => {
+  if (req.user.role !== 'owner') {
+    return res.status(403).json({ success: false, error: 'Faol qurilmalarni faqat egasi boshqara oladi' });
+  }
+  try {
+    const removed = await db.run('DELETE FROM sessions WHERE user_id = ?', [req.params.id]);
+    res.json({ success: true, revoked: removed.changes });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
   }
 });
 
@@ -359,7 +580,16 @@ app.get('/api/orders/:id', async (req, res) => {
     if (req.user.role === 'courier') delete order.admin_notes;
 
     const items = await db.all('SELECT * FROM order_items WHERE order_id = ?', [order.id]);
-    res.json({ success: true, data: { ...order, items } });
+    const handoffs = await db.all(`
+      SELECT h.assignment, h.notes, h.created_at,
+        u1.full_name AS from_courier_name, u2.full_name AS to_courier_name
+      FROM courier_handoffs h
+      JOIN users u1 ON u1.id = h.from_courier_id
+      JOIN users u2 ON u2.id = h.to_courier_id
+      WHERE h.order_id = ?
+      ORDER BY h.id DESC
+    `, [order.id]);
+    res.json({ success: true, data: { ...order, items, handoffs } });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
   }
@@ -670,8 +900,17 @@ app.patch('/api/orders/:id/assign-courier', async (req, res) => {
     const order = await db.get('SELECT id FROM orders WHERE id = ?', [req.params.id]);
     if (!order) return res.status(404).json({ success: false, error: 'Buyurtma topilmadi' });
 
-    const pickupId = courier_pickup_id ? Number(courier_pickup_id) : null;
-    const deliveryId = courier_delivery_id ? Number(courier_delivery_id) : null;
+    const pickupProvided = Object.hasOwn(req.body, 'courier_pickup_id');
+    const deliveryProvided = Object.hasOwn(req.body, 'courier_delivery_id');
+    if (!pickupProvided && !deliveryProvided) {
+      return res.status(400).json({ success: false, error: 'Kamida bitta kuryer maydonini yuboring' });
+    }
+    const pickupId = !pickupProvided || courier_pickup_id === '' || courier_pickup_id === null
+      ? null
+      : Number(courier_pickup_id);
+    const deliveryId = !deliveryProvided || courier_delivery_id === '' || courier_delivery_id === null
+      ? null
+      : Number(courier_delivery_id);
     if ((pickupId !== null && !Number.isInteger(pickupId)) ||
         (deliveryId !== null && !Number.isInteger(deliveryId))) {
       return res.status(400).json({ success: false, error: 'Kuryer tanlovi noto‘g‘ri' });
@@ -685,12 +924,18 @@ app.patch('/api/orders/:id/assign-courier', async (req, res) => {
       if (!courier) return res.status(400).json({ success: false, error: 'Faol kuryerni tanlang' });
     }
 
-    await db.run(`
-      UPDATE orders 
-      SET courier_pickup_id = COALESCE(?, courier_pickup_id),
-          courier_delivery_id = COALESCE(?, courier_delivery_id)
-      WHERE id = ?
-    `, [pickupId, deliveryId, req.params.id]);
+    const fields = [];
+    const params = [];
+    if (pickupProvided) {
+      fields.push('courier_pickup_id = ?');
+      params.push(pickupId);
+    }
+    if (deliveryProvided) {
+      fields.push('courier_delivery_id = ?');
+      params.push(deliveryId);
+    }
+    params.push(req.params.id);
+    await db.run(`UPDATE orders SET ${fields.join(', ')} WHERE id = ?`, params);
 
     const tgMsg = await telegram.formatOrderMessage(req.params.id, 'courier_assigned');
     if (tgMsg) await telegram.sendTelegramMessage(tgMsg.text, 'HTML', tgMsg.location);
@@ -698,6 +943,94 @@ app.patch('/api/orders/:id/assign-courier', async (req, res) => {
     res.json({ success: true, message: "Dastavchik muvaffaqiyatli biriktirildi" });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+app.get('/api/couriers', async (req, res) => {
+  try {
+    const couriers = await db.all(
+      "SELECT id, full_name FROM users WHERE role = 'courier' AND status = 'active' ORDER BY full_name"
+    );
+    res.json({ success: true, data: couriers });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+app.post('/api/orders/:id/handoff', async (req, res) => {
+  if (req.user.role !== 'courier') {
+    return res.status(403).json({ success: false, error: 'Buyurtmani topshirish faqat kuryer uchun ruxsat etilgan' });
+  }
+  try {
+    const assignment = req.body.assignment;
+    const toCourierId = Number(req.body.to_courier_id);
+    const notes = typeof req.body.notes === 'string' ? req.body.notes.trim() : '';
+    if (!['pickup', 'delivery'].includes(assignment) ||
+        !Number.isInteger(toCourierId) || toCourierId < 1 ||
+        (req.body.notes !== undefined && (typeof req.body.notes !== 'string' || notes.length > 500))) {
+      return res.status(400).json({ success: false, error: 'Topshirish ma’lumotlari noto‘g‘ri' });
+    }
+    if (toCourierId === req.user.id) {
+      return res.status(400).json({ success: false, error: 'Buyurtmani o‘zingizga topshira olmaysiz' });
+    }
+
+    const order = await db.get('SELECT * FROM orders WHERE id = ?', [req.params.id]);
+    if (!order) return res.status(404).json({ success: false, error: 'Buyurtma topilmadi' });
+    const currentCourierId = assignment === 'pickup' ? order.courier_pickup_id : order.courier_delivery_id;
+    const allowedStatuses = assignment === 'pickup'
+      ? ['yangi', 'qabul_qilindi']
+      : ['qabul_qilindi', 'yuvishda', 'quritishda', 'tayyor', 'yetkazilmoqda'];
+    if (currentCourierId !== req.user.id || !allowedStatuses.includes(order.status)) {
+      return res.status(403).json({ success: false, error: 'Bu bosqichdagi buyurtmani topshirish huquqingiz yo‘q' });
+    }
+
+    const nextCourier = await db.get(
+      "SELECT id, full_name, telegram_id FROM users WHERE id = ? AND role = 'courier' AND status = 'active'",
+      [toCourierId]
+    );
+    if (!nextCourier) return res.status(400).json({ success: false, error: 'Faol kuryerni tanlang' });
+
+    try {
+      await db.transaction(async transaction => {
+        const column = assignment === 'pickup' ? 'courier_pickup_id' : 'courier_delivery_id';
+        const result = await transaction.run(
+          `UPDATE orders SET ${column} = ? WHERE id = ? AND ${column} = ? AND status = ?`,
+          [toCourierId, order.id, req.user.id, order.status]
+        );
+        if (result.changes !== 1) {
+          const error = new Error('Buyurtma boshqa foydalanuvchi tomonidan o‘zgartirildi; yangilab qayta urinib ko‘ring');
+          error.statusCode = 409;
+          throw error;
+        }
+        await transaction.run(`
+          INSERT INTO courier_handoffs (order_id, assignment, from_courier_id, to_courier_id, notes)
+          VALUES (?, ?, ?, ?, ?)
+        `, [order.id, assignment, req.user.id, toCourierId, notes || null]);
+      });
+    } catch (error) {
+      if (error.statusCode === 409) {
+        return res.status(409).json({ success: false, error: error.message });
+      }
+      throw error;
+    }
+
+    let notifications = [];
+    let notificationWarning = null;
+    try {
+      const fromCourier = {
+        id: req.user.id,
+        full_name: req.user.full_name,
+        telegram_id: (await db.get('SELECT telegram_id FROM users WHERE id = ?', [req.user.id]))?.telegram_id
+      };
+      notifications = await telegram.notifyCourierHandoff(order, assignment, fromCourier, nextCourier, notes);
+    } catch (error) {
+      notificationWarning = error.message;
+      console.error('Buyurtma topshirish Telegram xabari yuborilmadi:', error.message);
+    }
+    const message = `Buyurtma ${nextCourier.full_name} kuryerga topshirildi`;
+    res.json({ success: true, message, notifications, notification_warning: notificationWarning });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
   }
 });
 
@@ -811,6 +1144,75 @@ app.post('/api/users', async (req, res) => {
   }
 });
 
+app.post('/api/users/:id/reset-password', async (req, res) => {
+  if (req.user.role !== 'owner') {
+    return res.status(403).json({ success: false, error: 'Parolni faqat egasi tiklay oladi' });
+  }
+  try {
+    const user = await db.get('SELECT id FROM users WHERE id = ?', [req.params.id]);
+    if (!user) return res.status(404).json({ success: false, error: 'Xodim topilmadi' });
+    if (user.id === req.user.id) {
+      return res.status(400).json({ success: false, error: 'O‘z parolingizni profil oynasidan almashtiring' });
+    }
+    const temporaryPassword = crypto.randomBytes(18).toString('base64url');
+    await db.transaction(async transaction => {
+      await transaction.run('UPDATE users SET password = ? WHERE id = ?', [hashPassword(temporaryPassword), user.id]);
+      await transaction.run('DELETE FROM sessions WHERE user_id = ?', [user.id]);
+    });
+    res.json({
+      success: true,
+      temporary_password: temporaryPassword,
+      message: 'Yangi vaqtinchalik parol faqat hozir ko‘rsatiladi. Uni xodimga xavfsiz yetkazing.'
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+app.get('/api/telegram/users', async (req, res) => {
+  if (req.user.role !== 'owner') {
+    return res.status(403).json({ success: false, error: 'Telegram hisoblarini faqat egasi ko‘ra oladi' });
+  }
+  try {
+    const users = await db.all(`
+      SELECT id, username, full_name, role, telegram_id
+      FROM users
+      WHERE status = 'active'
+      ORDER BY role, full_name
+    `);
+    res.json({ success: true, data: users });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+app.patch('/api/telegram/users/:id', async (req, res) => {
+  if (req.user.role !== 'owner') {
+    return res.status(403).json({ success: false, error: 'Telegram hisoblarini faqat egasi boshqara oladi' });
+  }
+  try {
+    const telegramId = req.body.telegram_id === null || req.body.telegram_id === ''
+      ? null
+      : String(req.body.telegram_id);
+    if (telegramId !== null && !/^\d{1,20}$/.test(telegramId)) {
+      return res.status(400).json({ success: false, error: 'Telegram ID faqat raqamlardan iborat bo‘lishi kerak' });
+    }
+    const user = await db.get('SELECT id FROM users WHERE id = ?', [req.params.id]);
+    if (!user) return res.status(404).json({ success: false, error: 'Xodim topilmadi' });
+    if (telegramId) {
+      const duplicate = await db.get('SELECT id FROM users WHERE telegram_id = ? AND id <> ?', [telegramId, user.id]);
+      if (duplicate) return res.status(409).json({ success: false, error: 'Bu Telegram ID boshqa xodimga bog‘langan' });
+    }
+    await db.run('UPDATE users SET telegram_id = ? WHERE id = ?', [telegramId, user.id]);
+    res.json({ success: true, message: 'Telegram profili saqlandi' });
+  } catch (error) {
+    if (String(error.message).includes('users_telegram_id_unique_idx')) {
+      return res.status(409).json({ success: false, error: 'Bu Telegram ID boshqa xodimga bog‘langan' });
+    }
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
 // ================= TELEGRAM GURUHIGA TO'G'RIDAN TO'G'RI YUBORISH VA SOZLAMALAR =================
 app.get('/api/settings', async (req, res) => {
   if (req.user.role !== 'owner') {
@@ -820,6 +1222,7 @@ app.get('/api/settings', async (req, res) => {
     const rows = await db.all('SELECT * FROM settings');
     const settings = {};
     rows.forEach(r => { settings[r.key] = r.value; });
+    delete settings.telegram_webhook_secret;
     res.json({ success: true, data: settings });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
@@ -831,7 +1234,22 @@ app.post('/api/settings', async (req, res) => {
     return res.status(403).json({ success: false, error: 'Sozlamalarni o‘zgartirish uchun ruxsat yo‘q' });
   }
   try {
-    const { bot_token, group_chat_id, company_name, company_phone, company_address, auto_send_telegram, order_number_start } = req.body;
+    const { bot_token, group_chat_id, telegram_admin_id, company_name, company_phone, company_address, auto_send_telegram, order_number_start, app_url } = req.body;
+    if (telegram_admin_id !== undefined && telegram_admin_id !== '' && !/^\d{1,20}$/.test(String(telegram_admin_id))) {
+      return res.status(400).json({ success: false, error: 'Telegram ega/admin ID si faqat raqamlardan iborat bo‘lishi kerak' });
+    }
+    if (app_url !== undefined) {
+      let parsedUrl;
+      try {
+        parsedUrl = new URL(String(app_url).trim());
+      } catch {
+        return res.status(400).json({ success: false, error: 'Ilova manzili noto‘g‘ri' });
+      }
+      if (parsedUrl.protocol !== 'https:' || parsedUrl.username || parsedUrl.password ||
+          parsedUrl.pathname !== '/' || parsedUrl.search || parsedUrl.hash) {
+        return res.status(400).json({ success: false, error: 'Ilova manzili HTTPS sayti bo‘lishi kerak (masalan https://osaf.vercel.app)' });
+      }
+    }
     if (order_number_start !== undefined) {
       const parsedStart = Number(order_number_start);
       if (!Number.isInteger(parsedStart) || parsedStart < 1 || parsedStart > 999999) {
@@ -850,14 +1268,40 @@ app.post('/api/settings', async (req, res) => {
     }
     if (bot_token !== undefined) await telegram.setSetting('bot_token', bot_token);
     if (group_chat_id !== undefined) await telegram.setSetting('group_chat_id', group_chat_id);
+    if (telegram_admin_id !== undefined) await telegram.setSetting('telegram_admin_id', String(telegram_admin_id));
     if (company_name !== undefined) await telegram.setSetting('company_name', company_name);
     if (company_phone !== undefined) await telegram.setSetting('company_phone', company_phone);
     if (company_address !== undefined) await telegram.setSetting('company_address', company_address);
     if (auto_send_telegram !== undefined) await telegram.setSetting('auto_send_telegram', String(auto_send_telegram));
+    if (app_url !== undefined) await telegram.setSetting('app_url', String(app_url).trim().replace(/\/+$/, ''));
 
     res.json({ success: true, message: "Sozlamalar saqlandi" });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+app.get('/api/telegram/status', async (req, res) => {
+  if (req.user.role !== 'owner') {
+    return res.status(403).json({ success: false, error: 'Bot holatini faqat egasi ko‘ra oladi' });
+  }
+  try {
+    const status = await telegram.getBotStatus();
+    res.json({ success: true, data: status });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+app.post('/api/telegram/setup', async (req, res) => {
+  if (req.user.role !== 'owner') {
+    return res.status(403).json({ success: false, error: 'Botni faqat egasi sozlay oladi' });
+  }
+  try {
+    const result = await telegram.configureWebhook();
+    res.json({ success: true, data: result, message: 'Telegram webhook muvaffaqiyatli ulandi' });
+  } catch (error) {
+    res.status(502).json({ success: false, error: error.message });
   }
 });
 
@@ -908,10 +1352,32 @@ app.get('/api/reports/excel', async (req, res) => {
     return res.status(403).json({ success: false, error: 'Moliyaviy hisobot faqat egasi uchun mavjud' });
   }
   try {
-    const buffer = await reports.generateOrdersExcel();
-    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
-    res.setHeader('Content-Disposition', `attachment; filename="Gilam_Yuvish_Hisobot_${Date.now()}.xlsx"`);
-    res.send(buffer);
+    const batchId = `manual-${crypto.randomUUID()}`;
+    const orderIds = await claimUnexportedOrders(batchId, req.user.id);
+    if (!orderIds.length) {
+      return res.status(204).json({ success: true, message: 'Yangi eksport qilinmagan buyurtmalar yo‘q', exported_orders: 0 });
+    }
+    try {
+      const buffer = await reports.generateOrdersExcel({ orderIds });
+      const delivery = await telegram.sendReportsToAdmins(
+        [{ name: `OSAF_Buyurtmalar_${Date.now()}.xlsx`, buffer }],
+        `OSAF Excel hisoboti: ${orderIds.length} ta yangi buyurtma.`
+      );
+      if (delivery.simulated) {
+        await db.run(
+          'INSERT INTO telegram_logs (chat_id, message, status) VALUES (?, ?, ?)',
+          ['NOT_CONFIGURED', `Excel eksport qilindi: ${orderIds.length} ta buyurtma. Telegram qabul qiluvchi sozlanmagan.`, 'export_downloaded_telegram_not_configured']
+        );
+      }
+      res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+      res.setHeader('Content-Disposition', `attachment; filename="Gilam_Yuvish_Hisobot_${Date.now()}.xlsx"`);
+      res.setHeader('X-Exported-Orders', String(orderIds.length));
+      res.setHeader('X-Telegram-Sent', String(!delivery.simulated));
+      return res.send(buffer);
+    } catch (error) {
+      await releaseExportClaim(batchId);
+      throw error;
+    }
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
   }

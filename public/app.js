@@ -5,6 +5,17 @@ let globalCouriers = [];
 let globalOrders = [];
 let authenticatedDataLoaded = false;
 
+function togglePasswordVisibility() {
+  const input = document.getElementById('loginPassword');
+  const button = document.querySelector('.password-visibility-toggle');
+  if (!input || !button) return;
+  const showPassword = input.type === 'password';
+  input.type = showPassword ? 'text' : 'password';
+  button.innerHTML = `<i class="fa-solid ${showPassword ? 'fa-eye-slash' : 'fa-eye'}" aria-hidden="true"></i>`;
+  button.setAttribute('aria-label', showPassword ? 'Parolni yashirish' : 'Parolni ko‘rsatish');
+  button.title = showPassword ? 'Parolni yashirish' : 'Parolni ko‘rsatish';
+}
+
 function applyTheme(theme) {
   const activeTheme = theme === 'light' ? 'light' : 'dark';
   document.documentElement.dataset.theme = activeTheme;
@@ -20,6 +31,77 @@ function applyTheme(theme) {
   });
   const themeColor = document.querySelector('meta[name="theme-color"]');
   if (themeColor) themeColor.content = activeTheme === 'dark' ? '#09090d' : '#f4f6fb';
+}
+
+async function resetStaffPassword(userId) {
+  if (!confirm('Ushbu xodim uchun yangi vaqtinchalik parol yaratilsinmi? Eski sessiyalari tizimdan chiqariladi.')) return;
+  try {
+    const response = await fetch(`/api/users/${userId}/reset-password`, { method: 'POST' });
+    const result = await response.json();
+    if (!response.ok || !result.success) throw new Error(result.error || 'Parolni yangilab bo‘lmadi');
+    alert(`${result.message}\n\nVaqtinchalik parol:\n${result.temporary_password}`);
+  } catch (error) {
+    alert(error.message);
+  }
+}
+
+async function loadActiveSessions() {
+  const container = document.getElementById('activeSessionsContainer');
+  if (!container) return;
+  container.innerHTML = '<p class="text-muted">Faol qurilmalar yuklanmoqda...</p>';
+  try {
+    const response = await fetch('/api/sessions');
+    const result = await response.json();
+    if (!response.ok || !result.success) throw new Error(result.error || 'Sessiyalarni yuklab bo‘lmadi');
+    if (!result.data.length) {
+      container.innerHTML = '<p class="text-muted">Hozir faol qurilma yo‘q.</p>';
+      return;
+    }
+    container.innerHTML = `
+      <table class="table">
+        <thead><tr><th>Xodim</th><th>Rol</th><th>Qurilma / brauzer</th><th>IP</th><th>Kirilgan vaqt</th><th>Amal</th></tr></thead>
+        <tbody>${result.data.map(session => `
+          <tr>
+            <td><strong>${escapeHtml(session.full_name)}</strong><br><small>${escapeHtml(session.username)}</small></td>
+            <td>${escapeHtml(session.role)}</td>
+            <td>${escapeHtml(session.user_agent || 'Noma’lum qurilma')}</td>
+            <td><code>${escapeHtml(session.ip_address || '-')}</code></td>
+            <td>${escapeHtml(session.created_at || '-')}</td>
+            <td><button class="btn btn-sm btn-outline" onclick="revokeSession('${escapeHtml(session.session_id)}')"><i class="fa-solid fa-right-from-bracket"></i> Chiqaring</button></td>
+          </tr>
+        `).join('')}</tbody>
+      </table>
+      <button class="btn btn-danger btn-sm mt-2" onclick="revokeAllUserSessions()"><i class="fa-solid fa-user-slash"></i> Barcha xodimlarni chiqarish</button>
+    `;
+  } catch (error) {
+    container.innerHTML = `<p class="text-danger">${escapeHtml(error.message)}</p>`;
+  }
+}
+
+async function revokeSession(sessionId) {
+  if (!confirm('Ushbu qurilmani tizimdan chiqarasizmi?')) return;
+  try {
+    const response = await fetch(`/api/sessions/${encodeURIComponent(sessionId)}`, { method: 'DELETE' });
+    const result = await response.json();
+    if (!response.ok || !result.success) throw new Error(result.error || 'Qurilmani chiqarib bo‘lmadi');
+    await loadActiveSessions();
+    showToast(result.message);
+  } catch (error) {
+    alert(error.message);
+  }
+}
+
+async function revokeAllUserSessions() {
+  if (!confirm('Barcha xodimlarning faol qurilmalarini chiqarasizmi?')) return;
+  try {
+    const response = await fetch('/api/sessions', { method: 'DELETE' });
+    const result = await response.json();
+    if (!response.ok || !result.success) throw new Error(result.error || 'Qurilmalarni chiqarib bo‘lmadi');
+    await loadActiveSessions();
+    showToast(`${result.revoked} ta faol sessiya bekor qilindi`);
+  } catch (error) {
+    alert(error.message);
+  }
 }
 
 function toggleTheme() {
@@ -183,6 +265,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   applyTheme(localStorage.getItem('osaf-theme') || 'dark');
   enableHorizontalScroll();
   enable3dEffects();
+  await loadLoginCaptcha();
 
   // Bugungi sanani yangi buyurtmaga qo'yish
   const today = new Date().toISOString().slice(0, 10);
@@ -204,6 +287,21 @@ document.addEventListener('DOMContentLoaded', async () => {
 });
 
 // ================= LOGIN & AUTH =================
+async function loadLoginCaptcha() {
+  try {
+    const response = await fetch('/api/auth/captcha');
+    const result = await response.json();
+    if (!response.ok || !result.success) throw new Error(result.error || 'Tekshirish rasmini yuklab bo‘lmadi');
+    document.getElementById('loginCaptchaImage').src = result.data.image;
+    document.getElementById('loginCaptchaId').value = result.data.id;
+    document.getElementById('loginCaptchaAnswer').value = '';
+  } catch (error) {
+    console.error('CAPTCHA yuklash xatosi:', error);
+    const hint = document.getElementById('loginCaptchaHint');
+    if (hint) hint.textContent = error.message;
+  }
+}
+
 async function initializeAuthenticatedApp() {
   if (authenticatedDataLoaded) return;
   authenticatedDataLoaded = true;
@@ -212,6 +310,11 @@ async function initializeAuthenticatedApp() {
   if (currentUser.role !== 'courier') {
     await loadStaff();
     await loadDashboardStats();
+  } else {
+    const response = await fetch('/api/couriers');
+    const result = await response.json();
+    if (!response.ok || !result.success) throw new Error(result.error || 'Kuryerlar ro‘yxati yuklanmadi');
+    globalCouriers = result.data;
   }
   await loadOrders();
   if (currentUser.role === 'owner') await loadTgSettings();
@@ -227,12 +330,14 @@ async function handleLogin(e) {
   e.preventDefault();
   const username = document.getElementById('loginUsername').value.trim();
   const password = document.getElementById('loginPassword').value;
+  const captcha_id = document.getElementById('loginCaptchaId').value;
+  const captcha_answer = document.getElementById('loginCaptchaAnswer').value.trim();
 
   try {
     const res = await fetch('/api/auth/login', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ username, password })
+      body: JSON.stringify({ username, password, captcha_id, captcha_answer })
     });
 
     const json = await res.json();
@@ -243,11 +348,14 @@ async function handleLogin(e) {
       showToast(`Xush kelibsiz, ${currentUser.full_name}!`);
     } else {
       alert("Xatolik: " + (json.error || "Login yoki parol noto'g'ri"));
+      await loadLoginCaptcha();
     }
   } catch (err) {
     alert("Serverga ulanishda xato yuz berdi");
+    await loadLoginCaptcha();
   } finally {
     document.getElementById('loginPassword').value = '';
+    document.getElementById('loginCaptchaAnswer').value = '';
   }
 }
 
@@ -363,6 +471,7 @@ function switchTab(tabId) {
     'courier-mode': { title: "Dastavchik Ish Maydoni", sub: "Olingan buyurtmalarni sexga topshiring va tayyorlarini yetkazib bering" },
     'pricing': { title: "Kategoriya va Xizmat Narxlari", sub: "Gilam, adyol, parda va buyumlar narxlarini belgilash" },
     'staff': { title: "Xodimlar va Dastavchiklar", sub: "Adminlar, operatorlar va mashinali kuryerlar ro'yxati" },
+    'sessions': { title: "Faol qurilmalar", sub: "Tizimga kirgan qurilmalarni ko‘ring va shubhali sessiyalarni bekor qiling" },
     'reports': { title: "Excel va Word Hisobotlar", sub: "Moliya, kassa, yuvilgan maydonlar va shartnoma-kvitansiyalar" },
     'telegram-config': { title: "Telegram Guruh Integratsiyasi", sub: "Buyurtmalarni guruhga avtomatik tashlab beruvchi bot sozlamasi" }
   };
@@ -375,7 +484,12 @@ function switchTab(tabId) {
   if (tabId === 'courier-mode') renderCourierDeliveries();
   if (tabId === 'orders') loadOrders();
   if (tabId === 'reports') loadReceiptsList();
-  if (tabId === 'telegram-config') loadTgLogs();
+  if (tabId === 'telegram-config') {
+    loadTgLogs();
+    loadTelegramStatus();
+    loadTelegramUsers();
+  }
+  if (tabId === 'sessions') loadActiveSessions();
 }
 
 // ================= LOKATSIYANI AUTO OLISH =================
@@ -588,7 +702,11 @@ function renderStaffTable(users) {
       <td><a href="tel:${escapeHtml(u.phone)}">${escapeHtml(u.phone || '-')}</a></td>
       <td>${u.car_model ? `<b>${escapeHtml(u.car_model)}</b> (${escapeHtml(u.car_number || '')})` : '-'}</td>
       <td><span class="status-pill status-tayyor">Faol</span></td>
-      <td><small class="text-muted">${u.created_at ? u.created_at.slice(0, 10) : '-'}</small></td>
+      <td>
+        ${Number(u.id) === currentUser.id
+          ? '<small>O‘z parolingizni profil orqali almashtiring</small>'
+          : `<button class="btn btn-sm btn-outline" onclick="resetStaffPassword(${Number(u.id)})"><i class="fa-solid fa-key"></i> Parolni tiklash</button>`}
+      </td>
     </tr>
   `).join('');
 }
@@ -661,10 +779,10 @@ function addNewItemRow() {
         ${catOptions}
       </select>
     </td>
-    <td style="width: 85px;">
+    <td class="item-dimension-cell" style="width: 85px;">
       <input type="number" class="item-len" step="0.05" min="0" required oninput="calculateRow('${rowId}')" placeholder="Uzunligi">
     </td>
-    <td style="width: 85px;">
+    <td class="item-dimension-cell" style="width: 85px;">
       <input type="number" class="item-wid" step="0.05" min="0" required oninput="calculateRow('${rowId}')" placeholder="Eni">
     </td>
     <td style="width: 100px;">
@@ -718,9 +836,11 @@ function onItemCategoryChange(rowId) {
     widInput.disabled = true;
     lenInput.value = '';
     widInput.value = '';
+    row.querySelectorAll('.item-dimension-cell').forEach(cell => { cell.hidden = true; });
   } else {
     lenInput.disabled = false;
     widInput.disabled = false;
+    row.querySelectorAll('.item-dimension-cell').forEach(cell => { cell.hidden = false; });
   }
 
   calculateRow(rowId);
@@ -1109,6 +1229,16 @@ function renderCourierDeliveries() {
         </button>
       `;
     }
+    const pickupHandoff = currentUser.role === 'courier' &&
+      ord.courier_pickup_id === currentUser.id &&
+      ['yangi', 'qabul_qilindi'].includes(ord.status)
+      ? renderCourierHandoffControl(ord.id, 'pickup', 'Olib ketishni topshirish')
+      : '';
+    const deliveryHandoff = currentUser.role === 'courier' &&
+      ord.courier_delivery_id === currentUser.id &&
+      ['qabul_qilindi', 'yuvishda', 'quritishda', 'tayyor', 'yetkazilmoqda'].includes(ord.status)
+      ? renderCourierHandoffControl(ord.id, 'delivery', 'Yetkazishni topshirish')
+      : '';
 
     const itemsListHtml = (ord.items || []).map(i => `
       <li>• <strong>${escapeHtml(i.item_type)}</strong>: ${(i.length && i.width) ? `${i.length}x${i.width}m (${i.area}m²)` : `${i.quantity} dona`} ${i.notes ? `<i class="text-muted">(${escapeHtml(i.notes)})</i>` : ''}</li>
@@ -1165,9 +1295,64 @@ function renderCourierDeliveries() {
             <i class="fa-brands fa-telegram"></i>
           </button>
         </div>
+        ${pickupHandoff || deliveryHandoff ? `
+          <div class="courier-handoff-controls">
+            <strong><i class="fa-solid fa-arrows-turn-to-dots"></i> Boshqa kuryerga topshirish</strong>
+            ${pickupHandoff}
+            ${deliveryHandoff}
+          </div>
+        ` : ''}
       </div>
     `;
   }).join('');
+}
+
+function renderCourierHandoffControl(orderId, assignment, label) {
+  const options = globalCouriers
+    .filter(courier => courier.id !== currentUser.id)
+    .map(courier => `<option value="${Number(courier.id)}">${escapeHtml(courier.full_name)}</option>`)
+    .join('');
+  return `
+    <div class="courier-handoff-row">
+      <label for="handoff-${orderId}-${assignment}">${label}</label>
+      <div>
+        <select id="handoff-${orderId}-${assignment}">
+          <option value="">Kuryerni tanlang</option>${options}
+        </select>
+        <button class="btn btn-sm btn-outline-primary" onclick="handoffOrder(${Number(orderId)}, '${assignment}')">
+          <i class="fa-solid fa-share"></i> Topshirish
+        </button>
+      </div>
+    </div>
+  `;
+}
+
+async function handoffOrder(orderId, assignment) {
+  const courierSelect = document.getElementById(`handoff-${orderId}-${assignment}`);
+  const to_courier_id = courierSelect ? courierSelect.value : '';
+  if (!to_courier_id) {
+    alert('Buyurtmani oladigan kuryerni tanlang');
+    return;
+  }
+  const notes = prompt('Topshirishga qisqa izoh yozing (ixtiyoriy):') || '';
+  try {
+    const response = await fetch(`/api/orders/${orderId}/handoff`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ assignment, to_courier_id: Number(to_courier_id), notes })
+    });
+    const result = await response.json();
+    if (!response.ok || !result.success) throw new Error(result.error || 'Buyurtmani topshirib bo‘lmadi');
+    showToast(result.message);
+    if (result.notification_warning) {
+      showToast(`Buyurtma topshirildi, ammo Telegram xabari yuborilmadi: ${result.notification_warning}`, 'info');
+    } else if (result.notifications?.some(notification => !notification.success)) {
+      showToast('Buyurtma topshirildi, Telegramda ayrim kuryerlarga xabar bormadi.', 'info');
+    }
+    await loadOrders();
+  } catch (error) {
+    alert(error.message);
+  }
 }
 
 async function quickUpdateStatus(orderId, newStatus, autoPayAmount = null) {
@@ -1255,6 +1440,19 @@ async function viewOrderDetails(orderId) {
           <p>Hozirgi holati: ${getStatusPill(ord.status)}</p>
         </div>
       </div>
+
+      ${(ord.handoffs || []).length ? `
+        <div class="order-handoff-history">
+          <h4><i class="fa-solid fa-clock-rotate-left"></i> Kuryerlar topshirish tarixi</h4>
+          ${(ord.handoffs || []).map(handoff => `
+            <p><strong>${handoff.assignment === 'pickup' ? 'Olib ketish' : 'Yetkazish'}:</strong>
+              ${escapeHtml(handoff.from_courier_name)} → ${escapeHtml(handoff.to_courier_name)}
+              <small>${escapeHtml(handoff.created_at || '')}</small>
+              ${handoff.notes ? `<br><span>${escapeHtml(handoff.notes)}</span>` : ''}
+            </p>
+          `).join('')}
+        </div>
+      ` : ''}
 
       <h4>Buyumlar tarkibi:</h4>
       <div class="table-responsive mt-2 mb-3">
@@ -1477,11 +1675,14 @@ async function loadTgSettings() {
       const s = json.data;
       if (document.getElementById('tgBotToken')) document.getElementById('tgBotToken').value = s.bot_token || '';
       if (document.getElementById('tgChatId')) document.getElementById('tgChatId').value = s.group_chat_id || '';
+      if (document.getElementById('tgAdminId')) document.getElementById('tgAdminId').value = s.telegram_admin_id || '';
+      if (document.getElementById('tgAppUrl')) document.getElementById('tgAppUrl').value = s.app_url || 'https://osaf.vercel.app';
       if (document.getElementById('tgAutoSend')) document.getElementById('tgAutoSend').checked = s.auto_send_telegram === 'true';
       if (document.getElementById('compName')) document.getElementById('compName').value = s.company_name || '';
       if (document.getElementById('orderNumberStart')) document.getElementById('orderNumberStart').value = s.order_number_start || '1000';
       if (document.getElementById('compPhone')) document.getElementById('compPhone').value = s.company_phone || '';
       if (document.getElementById('compAddress')) document.getElementById('compAddress').value = s.company_address || '';
+      await Promise.all([loadTelegramStatus(), loadTelegramUsers()]);
     }
   } catch (e) {
     console.error(e);
@@ -1492,6 +1693,8 @@ async function saveTgSettings(e) {
   e.preventDefault();
   const bot_token = document.getElementById('tgBotToken').value.trim();
   const group_chat_id = document.getElementById('tgChatId').value.trim();
+  const telegram_admin_id = document.getElementById('tgAdminId').value.trim();
+  const app_url = document.getElementById('tgAppUrl').value.trim();
   const auto_send_telegram = document.getElementById('tgAutoSend').checked;
   const company_name = document.getElementById('compName').value.trim();
   const order_number_start = document.getElementById('orderNumberStart').value.trim();
@@ -1501,14 +1704,92 @@ async function saveTgSettings(e) {
   const res = await fetch('/api/settings', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ bot_token, group_chat_id, auto_send_telegram, company_name, order_number_start, company_phone, company_address })
+    body: JSON.stringify({ bot_token, group_chat_id, telegram_admin_id, app_url, auto_send_telegram, company_name, order_number_start, company_phone, company_address })
   });
 
   const json = await res.json();
   if (json.success) {
     showToast("Telegram va korxona sozlamalari saqlandi!");
+    await loadTelegramStatus();
   } else {
     showToast(json.error || 'Sozlamalarni saqlashda xatolik yuz berdi!', 'error');
+  }
+}
+
+async function setupTelegramWebhook() {
+  try {
+    const response = await fetch('/api/telegram/setup', { method: 'POST' });
+    const result = await response.json();
+    if (!response.ok || !result.success) throw new Error(result.error || 'Telegram botni ulab bo‘lmadi');
+    showToast('Bot webhook o‘rnatildi va buyruqlar faollashtirildi');
+    await loadTelegramStatus();
+  } catch (error) {
+    alert(error.message);
+  }
+}
+
+async function loadTelegramStatus() {
+  const container = document.getElementById('tgBotStatus');
+  if (!container) return;
+  container.innerHTML = '<p>Bot va webhook tekshirilmoqda...</p>';
+  try {
+    const response = await fetch('/api/telegram/status');
+    const result = await response.json();
+    if (!response.ok || !result.success) throw new Error(result.error || 'Bot holatini olib bo‘lmadi');
+    const status = result.data;
+    container.innerHTML = `
+      <p><strong>Bot token:</strong> ${status.configured ? 'Sozlangan' : 'Kiritilmagan'}</p>
+      <p><strong>Bot:</strong> ${status.bot ? `@${escapeHtml(status.bot.username || '')} (${escapeHtml(status.bot.first_name || '')})` : 'Tekshirilmagan'}</p>
+      <p><strong>Webhook:</strong> ${status.webhook?.url ? escapeHtml(status.webhook.url) : 'Ulanmagan'}</p>
+      <p><strong>Guruh / ega chat:</strong> ${status.group_chat_configured ? 'Guruh sozlangan' : 'Guruh yo‘q'} / ${status.admin_chat_configured ? 'Ega ID sozlangan' : 'Ega ID yo‘q'}</p>
+      <p><strong>Botga bog‘langan xodimlar:</strong> ${Number(status.linked_users)}</p>
+      ${status.webhook ? `<p><strong>Kutilayotgan update:</strong> ${Number(status.webhook.pending_update_count)}${status.webhook.last_error_message ? ` · <span class="text-danger">${escapeHtml(status.webhook.last_error_message)}</span>` : ''}</p>` : ''}
+      ${status.error ? `<p class="text-danger"><strong>Telegram xatosi:</strong> ${escapeHtml(status.error)}</p>` : ''}
+    `;
+  } catch (error) {
+    container.innerHTML = `<p class="text-danger">${escapeHtml(error.message)}</p>`;
+  }
+}
+
+async function loadTelegramUsers() {
+  const container = document.getElementById('tgLinkedUsers');
+  if (!container) return;
+  try {
+    const response = await fetch('/api/telegram/users');
+    const result = await response.json();
+    if (!response.ok || !result.success) throw new Error(result.error || 'Telegram profillarini yuklab bo‘lmadi');
+    container.innerHTML = `
+      <table class="table">
+        <thead><tr><th>Xodim</th><th>Rol</th><th>Telegram ID</th><th></th></tr></thead>
+        <tbody>${result.data.map(user => `
+          <tr>
+            <td>${escapeHtml(user.full_name)} <small>@${escapeHtml(user.username)}</small></td>
+            <td>${escapeHtml(user.role)}</td>
+            <td><input id="telegram-user-${Number(user.id)}" inputmode="numeric" value="${escapeHtml(user.telegram_id || '')}" placeholder="/start dan olgan ID"></td>
+            <td><button class="btn btn-sm btn-outline-primary" onclick="saveTelegramUser(${Number(user.id)})">Saqlash</button></td>
+          </tr>
+        `).join('')}</tbody>
+      </table>
+    `;
+  } catch (error) {
+    container.innerHTML = `<p class="text-danger">${escapeHtml(error.message)}</p>`;
+  }
+}
+
+async function saveTelegramUser(userId) {
+  const input = document.getElementById(`telegram-user-${userId}`);
+  try {
+    const response = await fetch(`/api/telegram/users/${userId}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ telegram_id: input.value.trim() })
+    });
+    const result = await response.json();
+    if (!response.ok || !result.success) throw new Error(result.error || 'Telegram ID saqlanmadi');
+    showToast(result.message);
+    await loadTelegramStatus();
+  } catch (error) {
+    alert(error.message);
   }
 }
 
@@ -1539,9 +1820,33 @@ async function loadTgLogs() {
 }
 
 // ================= HISOBOTLARNI EXCEL VA WORD YUKLASH =================
-function downloadExcel() {
-  showToast("Excel fayli shakllantirilmoqda...", "info");
-  window.location.href = '/api/reports/excel';
+async function downloadExcel() {
+  showToast('Yangi buyurtmalar Excel fayli tayyorlanmoqda...', 'info');
+  try {
+    const response = await fetch('/api/reports/excel');
+    if (response.status === 204) {
+      showToast('Yangi eksport qilinmagan buyurtmalar yo‘q.', 'info');
+      return;
+    }
+    if (!response.ok) {
+      const result = await response.json();
+      throw new Error(result.error || 'Excel hisoboti tayyorlanmadi');
+    }
+    const blob = await response.blob();
+    const downloadUrl = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = downloadUrl;
+    link.download = `OSAF_Buyurtmalar_${new Date().toISOString().slice(0, 10)}.xlsx`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    setTimeout(() => URL.revokeObjectURL(downloadUrl), 1000);
+    const telegramSent = response.headers.get('X-Telegram-Sent') === 'true';
+    const exportedCount = response.headers.get('X-Exported-Orders') || '0';
+    showToast(`${exportedCount} ta yangi buyurtma yuklandi${telegramSent ? ' va Telegramga yuborildi' : ' (Telegram qabul qiluvchi sozlanmagan)'}.`, telegramSent ? 'success' : 'info');
+  } catch (error) {
+    alert(error.message);
+  }
 }
 
 function downloadWordSummary() {
@@ -1584,6 +1889,13 @@ function populateQuickCalcSelect() {
       ${escapeHtml(c.name)} (${Number(c.price_per_unit).toLocaleString()} so'm / ${c.unit === 'kv_m' ? 'm²' : 'dona'})
     </option>
   `).join('');
+  runQuickCalc();
+}
+
+function setQuickCalcSize(length, width) {
+  document.getElementById('quickCalcLen').value = length;
+  document.getElementById('quickCalcWid').value = width;
+  runQuickCalc();
 }
 
 function runQuickCalc() {
@@ -1593,6 +1905,17 @@ function runQuickCalc() {
   const opt = sel.options[sel.selectedIndex];
   const unit = opt.getAttribute('data-unit');
   const price = parseFloat(opt.getAttribute('data-price')) || 0;
+  const dimensions = document.getElementById('quickCalcDimensionFields');
+  const presets = document.getElementById('quickCalcSizePresets');
+  const singleAreaRow = document.getElementById('quickCalcSingleAreaRow');
+  const quantityLabel = document.getElementById('quickCalcQuantityLabel');
+  const unitPriceLabel = document.getElementById('quickResUnitPriceLabel');
+  const isAreaBased = unit === 'kv_m';
+  if (dimensions) dimensions.hidden = !isAreaBased;
+  if (presets) presets.hidden = !isAreaBased;
+  if (singleAreaRow) singleAreaRow.hidden = !isAreaBased;
+  if (quantityLabel) quantityLabel.textContent = isAreaBased ? 'Gilamlar soni' : 'Buyumlar soni';
+  if (unitPriceLabel) unitPriceLabel.textContent = isAreaBased ? '1 m² uchun admin narxi:' : '1 dona uchun admin narxi:';
 
   const len = parseFloat(document.getElementById('quickCalcLen').value) || 0;
   const wid = parseFloat(document.getElementById('quickCalcWid').value) || 0;
@@ -1602,7 +1925,7 @@ function runQuickCalc() {
   let totalArea = 0;
   let total = 0;
 
-  if (unit === 'kv_m') {
+  if (isAreaBased) {
     singleArea = parseFloat((len * wid).toFixed(2));
     totalArea = parseFloat((singleArea * qty).toFixed(2));
     total = Math.round(totalArea * price);

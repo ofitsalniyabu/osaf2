@@ -39,7 +39,22 @@
           <div class="input-icon-wrap">
             <i class="fa-solid fa-lock"></i>
             <input type="password" id="loginPassword" required placeholder="Parol">
+            <button type="button" class="password-visibility-toggle" onclick="togglePasswordVisibility()" aria-label="Parolni ko‘rsatish" title="Parolni ko‘rsatish">
+              <i class="fa-solid fa-eye" aria-hidden="true"></i>
+            </button>
           </div>
+        </div>
+        <div class="form-group login-captcha">
+          <label for="loginCaptchaAnswer">Xavfsizlik tekshiruvi — rasmdagi 5 belgini kiriting:</label>
+          <div class="login-captcha-image-wrap">
+            <img id="loginCaptchaImage" alt="Kirish uchun xavfsizlik kodi">
+            <button type="button" class="btn btn-sm btn-outline" onclick="loadLoginCaptcha()" aria-label="Yangi tekshirish rasmi olish" title="Rasmni yangilash">
+              <i class="fa-solid fa-rotate"></i>
+            </button>
+          </div>
+          <input type="text" id="loginCaptchaAnswer" required maxlength="5" autocomplete="off" autocapitalize="characters" placeholder="5 belgili kod" aria-describedby="loginCaptchaHint">
+          <small class="hint" id="loginCaptchaHint">Kod 5 daqiqa amal qiladi; noto‘g‘ri kiritilsa yangi rasm olinadi.</small>
+          <input type="hidden" id="loginCaptchaId">
         </div>
         <button type="submit" class="btn btn-primary btn-block btn-lg" id="loginBtn">
           <i class="fa-solid fa-right-to-bracket"></i> Tizimga Kirish
@@ -100,6 +115,10 @@
         <button class="nav-item owner-only" onclick="switchTab('staff')">
           <i class="fa-solid fa-users"></i>
           <span>Xodimlar & Kuryerlar</span>
+        </button>
+        <button class="nav-item owner-only" onclick="switchTab('sessions')">
+          <i class="fa-solid fa-laptop-mobile"></i>
+          <span>Faol qurilmalar</span>
         </button>
         <button class="nav-item owner-only nav-reports" onclick="switchTab('reports')">
           <i class="fa-solid fa-file-excel"></i>
@@ -583,7 +602,7 @@
                   <label>Xizmat / Gilam turi</label>
                   <select id="quickCalcCategory" onchange="runQuickCalc()"></select>
                 </div>
-                <div class="form-row">
+                <div id="quickCalcDimensionFields" class="form-row">
                   <div class="form-group col-6">
                     <label>Uzunligi (masalan 1.30 m)</label>
                     <input type="number" id="quickCalcLen" value="1.30" step="0.05" oninput="runQuickCalc()">
@@ -593,17 +612,37 @@
                     <input type="number" id="quickCalcWid" value="2.60" step="0.05" oninput="runQuickCalc()">
                   </div>
                 </div>
+                <div id="quickCalcSizePresets" class="size-presets" aria-label="Tez tanlanadigan gilam o‘lchamlari">
+                  <button type="button" class="size-preset" onclick="setQuickCalcSize(1, 2)">1 × 2 m</button>
+                  <button type="button" class="size-preset" onclick="setQuickCalcSize(1.5, 2.5)">1.5 × 2.5 m</button>
+                  <button type="button" class="size-preset" onclick="setQuickCalcSize(2, 3)">2 × 3 m</button>
+                  <button type="button" class="size-preset" onclick="setQuickCalcSize(3, 4)">3 × 4 m</button>
+                  <button type="button" class="size-preset" onclick="setQuickCalcSize(4, 5)">4 × 5 m</button>
+                </div>
                 <div class="form-group">
-                  <label>Gilamlar soni</label>
+                  <label id="quickCalcQuantityLabel">Gilamlar soni</label>
                   <input type="number" id="quickCalcQty" value="1" min="1" oninput="runQuickCalc()">
                 </div>
                 <div class="quick-calc-result">
-                  <div class="res-item">1 ta gilam maydoni: <b id="quickResSingleArea">3.38 m²</b></div>
+                  <div id="quickCalcSingleAreaRow" class="res-item">1 ta gilam maydoni: <b id="quickResSingleArea">3.38 m²</b></div>
                   <div class="res-item">Jami maydon: <b id="quickResArea">3.38 m²</b></div>
-                  <div class="res-item">1 m² uchun admin narxi: <b id="quickResUnitPrice">15 000 so'm</b></div>
+                  <div class="res-item"><span id="quickResUnitPriceLabel">1 m² uchun admin narxi:</span> <b id="quickResUnitPrice">15 000 so'm</b></div>
                   <div class="res-total">JAMI HISOB: <span id="quickResTotal">50 700 so'm</span></div>
                 </div>
               </div>
+            </div>
+          </div>
+        </section>
+
+        <section id="tab-sessions" class="tab-pane">
+          <div class="card">
+            <div class="card-header">
+              <h3><i class="fa-solid fa-shield-halved"></i> Faol sessiyalar va qurilmalar</h3>
+              <button class="btn btn-sm btn-outline" onclick="loadActiveSessions()"><i class="fa-solid fa-rotate"></i> Yangilash</button>
+            </div>
+            <div class="card-body">
+              <p class="hint">Tizimga kirgan telefon va kompyuterlar ro‘yxati. Shubhali sessiyani shu yerdan darhol bekor qiling.</p>
+              <div id="activeSessionsContainer" class="table-responsive"></div>
             </div>
           </div>
         </section>
@@ -612,7 +651,7 @@
         <section id="tab-staff" class="tab-pane">
           <div class="card">
             <div class="card-header">
-              <h3><i class="fa-solid fa-users-gear"></i> Xodimlar va Dastavchiklar (Login & Parollar)</h3>
+              <h3><i class="fa-solid fa-users-gear"></i> Xodimlar va Dastavchiklar</h3>
               <button class="btn btn-sm btn-primary" onclick="openNewStaffModal()"><i class="fa-solid fa-user-plus"></i> Yangi Xodim Qo'shish</button>
             </div>
             <div class="table-responsive">
@@ -625,7 +664,7 @@
                     <th>Telefon</th>
                     <th>Avtomobil / Mashina raqami</th>
                     <th>Holati</th>
-                    <th>Yaratilgan</th>
+                    <th>Parol / Xavfsizlik</th>
                   </tr>
                 </thead>
                 <tbody id="staffTableBody"></tbody>
@@ -639,17 +678,17 @@
           <div class="reports-grid">
             <div class="report-box excel-box">
               <div class="report-icon"><i class="fa-solid fa-file-excel"></i></div>
-              <h3>Excel Barcha Buyurtmalar Hisoboti</h3>
-              <p>Mijozlar, gilamlar o'lchamlari (kv.m / dona), kassa tushumlari, qarzdorliklar va dastavchiklar hisoboti 3 ta alohida varaqda (.xlsx formatida).</p>
+              <h3>Yangi buyurtmalar Excel hisoboti</h3>
+              <p>Avval eksport qilingan buyurtmalar qayta qo‘shilmaydi. Fayl telefoningizga yuklanadi va Telegramdagi ega/admin hamda guruhga yuboriladi.</p>
               <button class="btn btn-success btn-lg owner-only" onclick="downloadExcel()">
-                <i class="fa-solid fa-download"></i> Excel (.xlsx) Hisobotni Yuklab Olish
+                <i class="fa-solid fa-download"></i> Yangi Excelni yuklab olish
               </button>
             </div>
 
             <div class="report-box word-box">
               <div class="report-icon"><i class="fa-solid fa-file-word"></i></div>
               <h3>Word Umumiy Boshqaruv Hisoboti</h3>
-              <p>Rahbariyat va ega admin uchun korxonaning umumiy ko'rsatkichlari, daromad, yuvilgan maydonlar va faollik haqida rasmiy bayonnoma (.docx).</p>
+              <p>Korxonaning umumiy ko'rsatkichlari va daromadi haqida jamlama bayonnoma (.docx). Kunlik Word va Excel hisobotlar har kuni Toshkent vaqti bilan 20:00 da Telegramga yuboriladi.</p>
               <button class="btn btn-primary btn-lg" onclick="downloadWordSummary()">
                 <i class="fa-solid fa-download"></i> Word (.docx) Jamlama Hisobotni Yuklash
               </button>
@@ -702,6 +741,18 @@
                   </div>
 
                   <div class="form-group">
+                    <label>Ilova manzili (botdagi tugma va webhook uchun):</label>
+                    <input type="url" id="tgAppUrl" value="https://osaf.vercel.app" placeholder="https://osaf.vercel.app">
+                    <small class="hint">Telegram bot webhook ishlashi uchun bu HTTPS manzil internetdan ochiq bo‘lishi kerak.</small>
+                  </div>
+
+                  <div class="form-group">
+                    <label>Ega/Admin Telegram ID (kunlik hisobotlar va buyurtma fayllari uchun):</label>
+                    <input type="text" id="tgAdminId" inputmode="numeric" placeholder="Masalan: 123456789">
+                    <small class="hint">Telegramda botga /start yuboring; ID ni bot javobidan olib kiriting.</small>
+                  </div>
+
+                  <div class="form-group">
                     <label class="checkbox-label">
                       <input type="checkbox" id="tgAutoSend">
                       <span>Holat o'zgarganda guruhga avtomatik yuborilsin (yangi buyurtma rasmiylashtirilganda xabar doim yuboriladi)</span>
@@ -734,8 +785,21 @@
                   <div class="d-flex gap-2 mt-3">
                     <button type="submit" class="btn btn-primary"><i class="fa-solid fa-floppy-disk"></i> Sozlamalarni Saqlash</button>
                     <button type="button" class="btn btn-outline-primary" onclick="sendTestTelegram()"><i class="fa-paper-plane"></i> Test Xabar Yuborish</button>
+                    <button type="button" class="btn btn-outline-primary" onclick="setupTelegramWebhook()"><i class="fa-solid fa-plug"></i> Botni ulash / webhook o‘rnatish</button>
                   </div>
                 </form>
+                <div class="tg-status-box mt-3">
+                  <div class="d-flex gap-2" style="align-items:center; justify-content:space-between;">
+                    <h4>Bot holati va tekshiruvi</h4>
+                    <button type="button" class="btn btn-sm btn-outline" onclick="loadTelegramStatus()"><i class="fa-solid fa-rotate"></i> Tekshirish</button>
+                  </div>
+                  <div id="tgBotStatus" class="tg-info-text">Bot holati tekshirilmagan.</div>
+                </div>
+                <div class="mt-4">
+                  <h4>Telegram hisoblarini xodimlarga bog‘lash</h4>
+                  <p class="hint">Xodim Telegramda /start yuborib chiqqan raqamli ID ni shu yerda bog‘lang. Faqat admin bu sozlamani o‘zgartira oladi.</p>
+                  <div id="tgLinkedUsers" class="table-responsive"></div>
+                </div>
               </div>
             </div>
 

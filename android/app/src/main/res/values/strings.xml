@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">OSAF Gilam Yuvish</string>
+    <string name="title_activity_main">OSAF Gilam Yuvish</string>
+    <string name="package_name">com.osaf.gilamyuvish</string>
+    <string name="custom_url_scheme">com.osaf.gilamyuvish</string>
+</resources>

@@ -137,6 +137,7 @@ async function initDb() {
       phone TEXT,
       car_model TEXT,
       car_number TEXT,
+      telegram_id TEXT,
       status TEXT DEFAULT 'active',
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     );
@@ -233,6 +234,36 @@ async function initDb() {
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     );
 
+    CREATE TABLE IF NOT EXISTS courier_handoffs (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      order_id INTEGER NOT NULL,
+      assignment TEXT NOT NULL,
+      from_courier_id INTEGER NOT NULL,
+      to_courier_id INTEGER NOT NULL,
+      notes TEXT,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE TABLE IF NOT EXISTS order_exports (
+      order_id INTEGER PRIMARY KEY,
+      batch_id TEXT NOT NULL,
+      exported_by INTEGER,
+      exported_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE TABLE IF NOT EXISTS telegram_updates (
+      update_id BIGINT PRIMARY KEY,
+      handled_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE TABLE IF NOT EXISTS login_captchas (
+      challenge_id TEXT PRIMARY KEY,
+      ip_hash TEXT NOT NULL,
+      answer_hash TEXT NOT NULL,
+      expires_at BIGINT NOT NULL,
+      attempts INTEGER NOT NULL DEFAULT 0
+    );
+
     CREATE TABLE IF NOT EXISTS sessions (
       token_hash TEXT PRIMARY KEY,
       user_id INTEGER NOT NULL,
@@ -261,6 +292,12 @@ async function initDb() {
       CREATE UNIQUE INDEX IF NOT EXISTS categories_name_unique_idx ON categories(name);
       CREATE INDEX IF NOT EXISTS sessions_user_id_idx ON sessions(user_id);
       CREATE INDEX IF NOT EXISTS sessions_expires_at_idx ON sessions(expires_at);
+      ALTER TABLE users ADD COLUMN IF NOT EXISTS telegram_id TEXT;
+      ALTER TABLE sessions ADD COLUMN IF NOT EXISTS user_agent TEXT;
+      ALTER TABLE sessions ADD COLUMN IF NOT EXISTS ip_address TEXT;
+      CREATE UNIQUE INDEX IF NOT EXISTS users_telegram_id_unique_idx ON users(telegram_id) WHERE telegram_id IS NOT NULL AND telegram_id <> '';
+      CREATE INDEX IF NOT EXISTS courier_handoffs_order_id_idx ON courier_handoffs(order_id);
+      CREATE INDEX IF NOT EXISTS sessions_user_id_idx ON sessions(user_id);
     `);
   } else {
     const orderColumns = await db.all('PRAGMA table_info(orders)');
@@ -275,10 +312,20 @@ async function initDb() {
         await db.run(`ALTER TABLE orders ADD COLUMN ${name} ${type}`);
       }
     }
+    const userColumns = await db.all('PRAGMA table_info(users)');
+    if (!userColumns.some(column => column.name === 'telegram_id')) {
+      await db.run('ALTER TABLE users ADD COLUMN telegram_id TEXT');
+    }
+    const sessionColumns = await db.all('PRAGMA table_info(sessions)');
+    const existingSessionColumns = new Set(sessionColumns.map(column => column.name));
+    if (!existingSessionColumns.has('user_agent')) await db.run('ALTER TABLE sessions ADD COLUMN user_agent TEXT');
+    if (!existingSessionColumns.has('ip_address')) await db.run('ALTER TABLE sessions ADD COLUMN ip_address TEXT');
     await db.exec(`
       CREATE UNIQUE INDEX IF NOT EXISTS categories_name_unique_idx ON categories(name);
       CREATE INDEX IF NOT EXISTS sessions_user_id_idx ON sessions(user_id);
       CREATE INDEX IF NOT EXISTS sessions_expires_at_idx ON sessions(expires_at);
+      CREATE UNIQUE INDEX IF NOT EXISTS users_telegram_id_unique_idx ON users(telegram_id) WHERE telegram_id IS NOT NULL AND telegram_id <> '';
+      CREATE INDEX IF NOT EXISTS courier_handoffs_order_id_idx ON courier_handoffs(order_id);
     `);
   }
 

@@ -174,7 +174,7 @@ body {
   position: relative;
 }
 
-.input-icon-wrap i {
+.input-icon-wrap > i {
   position: absolute;
   left: 12px;
   top: 50%;
@@ -184,6 +184,143 @@ body {
 
 .input-icon-wrap input {
   padding-left: 38px !important;
+}
+
+.input-icon-wrap .password-visibility-toggle {
+  position: absolute;
+  right: 9px;
+  top: 50%;
+  z-index: 1;
+  display: grid;
+  width: 36px;
+  height: 36px;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: 9px;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  transform: translateY(-50%);
+}
+
+.input-icon-wrap .password-visibility-toggle:hover,
+.input-icon-wrap .password-visibility-toggle:focus-visible {
+  background: rgba(225, 29, 72, 0.12);
+  color: #fb7185;
+  outline: none;
+}
+
+.input-icon-wrap input[type="password"],
+.input-icon-wrap input[type="text"] {
+  padding-right: 48px !important;
+}
+
+.login-captcha {
+  padding: 14px;
+  border: 1px solid rgba(225, 29, 72, 0.24);
+  border-radius: 14px;
+  background: rgba(225, 29, 72, 0.055);
+}
+
+.login-captcha-image-wrap {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 8px 0 10px;
+}
+
+.login-captcha-image-wrap img {
+  display: block;
+  width: 280px;
+  max-width: calc(100% - 48px);
+  height: 90px;
+  border: 1px solid var(--border-color);
+  border-radius: 14px;
+  background: #111827;
+  object-fit: contain;
+}
+
+.login-captcha-image-wrap button {
+  flex: 0 0 40px;
+  width: 40px;
+  height: 40px;
+}
+
+.login-captcha input[type="text"] {
+  min-height: 48px;
+  font-size: 19px;
+  font-weight: 800;
+  letter-spacing: 0.3em;
+  text-transform: uppercase;
+}
+
+.size-presets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: -5px 0 16px;
+}
+
+.size-preset {
+  border: 1px solid rgba(225, 29, 72, 0.28);
+  border-radius: 999px;
+  padding: 7px 12px;
+  background: rgba(225, 29, 72, 0.08);
+  color: var(--text-main);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background 160ms ease, color 160ms ease, transform 160ms ease;
+}
+
+.size-preset:hover {
+  background: #e11d48;
+  color: #fff;
+  transform: translateY(-1px);
+}
+
+.courier-handoff-controls,
+.order-handoff-history {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid rgba(225, 29, 72, 0.25);
+  border-radius: 12px;
+  background: rgba(225, 29, 72, 0.06);
+}
+
+.courier-handoff-row {
+  display: grid;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.courier-handoff-row > div {
+  display: flex;
+  gap: 8px;
+}
+
+.courier-handoff-row select {
+  flex: 1;
+  min-width: 0;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  padding: 8px;
+  background: var(--bg-card);
+  color: var(--text-main);
+}
+
+.order-handoff-history p {
+  margin: 0;
+  font-size: 13px;
+}
+
+.order-handoff-history small {
+  display: block;
+  color: var(--text-muted);
 }
 
 /* ================= APP LAYOUT ================= */
@@ -1062,6 +1199,26 @@ body {
 
 .table-items input:focus, .table-items select:focus {
   border-color: #e11d48;
+}
+
+.table-items td[hidden] {
+  display: none;
+}
+
+html[data-theme="light"] .table-items input,
+html[data-theme="light"] .table-items select {
+  border-color: #d8deea;
+  background: #fff;
+  color: #202432;
+}
+
+html[data-theme="light"] .courier-handoff-row select {
+  background: #fff;
+  color: #202432;
+}
+
+html[data-theme="light"] .size-preset {
+  color: #272c3a;
 }
 
 .btn-remove-row {

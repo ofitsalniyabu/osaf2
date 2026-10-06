@@ -24,3 +24,9 @@ __pycache__/
 
 test_report.xlsx
 test_word.docx
+android/.gradle/
+android/local.properties
+android/build/
+android/app/build/
+android/capacitor-cordova-android-plugins/build/
+android/capacitor-cordova-android-plugins/src/main/assets/
