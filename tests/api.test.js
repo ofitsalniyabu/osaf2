@@ -157,7 +157,13 @@ test('login page is served without exposing demo credentials', async () => {
   assert.match(html, /<div class="form-row" id="orderCourierAssignmentFields">[\s\S]*?id="orderPickupCourier"/);
   assert.match(html, /id="custPhone" required/);
   assert.match(html, /password-visibility-toggle/);
+  for (const inputId of ['loginPassword', 'tgBotToken', 'newStaffPass', 'currentPassword', 'newPassword', 'confirmNewPassword']) {
+    assert.match(html, new RegExp(`togglePasswordVisibility\\('${inputId}', this\\)`));
+  }
   assert.match(html, /loginCaptchaImage/);
+  assert.match(html, /amaldagi parollar hech kimga ko‘rsatilmaydi/i);
+  const appScript = await request('/app.js');
+  assert.match(await appScript.text(), /Yangi vaqtinchalik parol/);
   assert.match(html, /quickCalcSizePresets/);
   assert.doesNotMatch(html, /id="orderCourierAssignmentFields">[\s\S]*?id="custPhone"/);
   assert.doesNotMatch(html, /preset-sizes-bar|applyPresetToActiveRow/);

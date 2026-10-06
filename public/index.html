@@ -39,7 +39,7 @@
           <div class="input-icon-wrap">
             <i class="fa-solid fa-lock"></i>
             <input type="password" id="loginPassword" required placeholder="Parol">
-            <button type="button" class="password-visibility-toggle" onclick="togglePasswordVisibility()" aria-label="Parolni ko‘rsatish" title="Parolni ko‘rsatish">
+            <button type="button" class="password-visibility-toggle" onclick="togglePasswordVisibility('loginPassword', this)" aria-label="Parolni ko‘rsatish" title="Parolni ko‘rsatish">
               <i class="fa-solid fa-eye" aria-hidden="true"></i>
             </button>
           </div>
@@ -654,6 +654,9 @@
               <h3><i class="fa-solid fa-users-gear"></i> Xodimlar va Dastavchiklar</h3>
               <button class="btn btn-sm btn-primary" onclick="openNewStaffModal()"><i class="fa-solid fa-user-plus"></i> Yangi Xodim Qo'shish</button>
             </div>
+            <div class="card-body">
+              <p class="hint">Xavfsizlik uchun amaldagi parollar hech kimga ko‘rsatilmaydi. Ega boshqa xodimga yangi vaqtinchalik parol berishi mumkin; bu xodimning eski qurilmalaridagi sessiyalarni bekor qiladi.</p>
+            </div>
             <div class="table-responsive">
               <table class="table" id="staffTable">
                 <thead>
@@ -740,7 +743,12 @@
                 <form id="tgSettingsForm" onsubmit="saveTgSettings(event)">
                   <div class="form-group">
                     <label>1. Telegram bot tokeni (BotFather bergan):</label>
-                    <input type="password" id="tgBotToken" autocomplete="new-password" placeholder="BotFather bergan token">
+                    <div class="password-input-wrap">
+                      <input type="password" id="tgBotToken" autocomplete="new-password" placeholder="BotFather bergan token">
+                      <button type="button" class="password-visibility-toggle" onclick="togglePasswordVisibility('tgBotToken', this)" aria-label="Tokenni ko‘rsatish" title="Tokenni ko‘rsatish">
+                        <i class="fa-solid fa-eye" aria-hidden="true"></i>
+                      </button>
+                    </div>
                     <small class="hint">@BotFather dan olingan bot tokeni</small>
                   </div>
 
@@ -900,7 +908,12 @@
             </div>
             <div class="form-group col-6">
               <label>Parol</label>
-              <input type="password" id="newStaffPass" minlength="8" maxlength="256" required autocomplete="new-password" placeholder="Kamida 8 belgi">
+              <div class="password-input-wrap">
+                <input type="password" id="newStaffPass" minlength="8" maxlength="256" required autocomplete="new-password" placeholder="Kamida 8 belgi">
+                <button type="button" class="password-visibility-toggle" onclick="togglePasswordVisibility('newStaffPass', this)" aria-label="Parolni ko‘rsatish" title="Parolni ko‘rsatish">
+                  <i class="fa-solid fa-eye" aria-hidden="true"></i>
+                </button>
+              </div>
             </div>
           </div>
           <div class="form-group">
@@ -944,15 +957,30 @@
         <div class="modal-body">
           <div class="form-group">
             <label>Joriy parol</label>
-            <input type="password" id="currentPassword" autocomplete="current-password" required>
+            <div class="password-input-wrap">
+              <input type="password" id="currentPassword" autocomplete="current-password" required>
+              <button type="button" class="password-visibility-toggle" onclick="togglePasswordVisibility('currentPassword', this)" aria-label="Parolni ko‘rsatish" title="Parolni ko‘rsatish">
+                <i class="fa-solid fa-eye" aria-hidden="true"></i>
+              </button>
+            </div>
           </div>
           <div class="form-group">
             <label>Yangi parol (kamida 8 belgi)</label>
-            <input type="password" id="newPassword" minlength="8" maxlength="256" autocomplete="new-password" required>
+            <div class="password-input-wrap">
+              <input type="password" id="newPassword" minlength="8" maxlength="256" autocomplete="new-password" required>
+              <button type="button" class="password-visibility-toggle" onclick="togglePasswordVisibility('newPassword', this)" aria-label="Parolni ko‘rsatish" title="Parolni ko‘rsatish">
+                <i class="fa-solid fa-eye" aria-hidden="true"></i>
+              </button>
+            </div>
           </div>
           <div class="form-group">
             <label>Yangi parolni tasdiqlang</label>
-            <input type="password" id="confirmNewPassword" minlength="8" maxlength="256" autocomplete="new-password" required>
+            <div class="password-input-wrap">
+              <input type="password" id="confirmNewPassword" minlength="8" maxlength="256" autocomplete="new-password" required>
+              <button type="button" class="password-visibility-toggle" onclick="togglePasswordVisibility('confirmNewPassword', this)" aria-label="Parolni ko‘rsatish" title="Parolni ko‘rsatish">
+                <i class="fa-solid fa-eye" aria-hidden="true"></i>
+              </button>
+            </div>
           </div>
         </div>
         <div class="modal-footer">

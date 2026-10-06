@@ -5,9 +5,9 @@ let globalCouriers = [];
 let globalOrders = [];
 let authenticatedDataLoaded = false;
 
-function togglePasswordVisibility() {
-  const input = document.getElementById('loginPassword');
-  const button = document.querySelector('.password-visibility-toggle');
+function togglePasswordVisibility(inputId, button) {
+  const input = document.getElementById(inputId || 'loginPassword');
+  button = button || document.querySelector('.password-visibility-toggle');
   if (!input || !button) return;
   const showPassword = input.type === 'password';
   input.type = showPassword ? 'text' : 'password';
@@ -34,7 +34,7 @@ function applyTheme(theme) {
 }
 
 async function resetStaffPassword(userId) {
-  if (!confirm('Ushbu xodim uchun yangi vaqtinchalik parol yaratilsinmi? Eski sessiyalari tizimdan chiqariladi.')) return;
+  if (!confirm('Ushbu xodimga yangi vaqtinchalik parol berilsinmi? Amaldagi parol ko‘rsatilmaydi. Eski qurilma sessiyalari bekor qilinadi.')) return;
   try {
     const response = await fetch(`/api/users/${userId}/reset-password`, { method: 'POST' });
     const result = await response.json();
@@ -705,7 +705,7 @@ function renderStaffTable(users) {
       <td>
         ${Number(u.id) === currentUser.id
           ? '<small>O‘z parolingizni profil orqali almashtiring</small>'
-          : `<button class="btn btn-sm btn-outline" onclick="resetStaffPassword(${Number(u.id)})"><i class="fa-solid fa-key"></i> Parolni tiklash</button>`}
+          : `<button class="btn btn-sm btn-outline" onclick="resetStaffPassword(${Number(u.id)})"><i class="fa-solid fa-key"></i> Yangi vaqtinchalik parol</button>`}
       </td>
     </tr>
   `).join('');
