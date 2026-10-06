@@ -1174,7 +1174,9 @@ function renderDashboardRecentTable(orders) {
       <td><strong>${ord.final_amount.toLocaleString()} so'm</strong></td>
       <td>${getStatusPill(ord.status)}</td>
       <td>
-        <button class="btn btn-sm btn-outline" onclick="viewOrderDetails(${Number(ord.id)})">Ko'rish</button>
+        <button class="btn btn-sm btn-primary" title="Yetkazib berish ma'lumotlari" onclick="viewOrderDetails(${Number(ord.id)})">
+          <i class="fa-solid fa-truck"></i> Yetkazib berish
+        </button>
       </td>
     </tr>
   `).join('');
@@ -1446,7 +1448,7 @@ async function viewOrderDetails(orderId) {
         </div>
         <div>
           <h4>Buyurtma ma'lumotlari:</h4>
-          <p>Qabul qilingan sana: ${escapeHtml(ord.pickup_date || '-')}</p>
+          <p>Gilam olingan sana: <b>${escapeHtml(ord.pickup_date || ord.created_at || '-')}</b></p>
           <p>Yetkazish muddati: <b>${escapeHtml(ord.target_delivery_date || '-')}</b></p>
           <p>Yetkazilgan sana: <b>${escapeHtml(ord.delivered_date || '-')}</b></p>
           <p>Jami maydon: <b>${ord.total_area ? ord.total_area.toFixed(2) : 0} m²</b> (${ord.total_items} ta buyum)</p>

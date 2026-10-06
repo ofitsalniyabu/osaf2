@@ -167,6 +167,8 @@ test('login page is served without exposing demo credentials', async () => {
   assert.match(appScriptText, /Yangi vaqtinchalik parol/);
   assert.match(html, /quickCalcSizePresets/);
   assert.match(appScriptText, /Yetkazib berish/);
+  assert.match(appScriptText, /title="Yetkazib berish ma'lumotlari"/);
+  assert.match(appScriptText, /Gilam olingan sana/);
   assert.match(appScriptText, /Yetkazishga chiqish/);
   assert.doesNotMatch(html, /id="orderCourierAssignmentFields">[\s\S]*?id="custPhone"/);
   assert.doesNotMatch(html, /preset-sizes-bar|applyPresetToActiveRow/);
