@@ -244,6 +244,16 @@ async function initDb() {
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     );
 
+    CREATE TABLE IF NOT EXISTS owner_notifications (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL,
+      order_id INTEGER NOT NULL,
+      title TEXT NOT NULL,
+      message TEXT NOT NULL,
+      is_read INTEGER NOT NULL DEFAULT 0,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+
     CREATE TABLE IF NOT EXISTS order_exports (
       order_id INTEGER PRIMARY KEY,
       batch_id TEXT NOT NULL,
@@ -297,6 +307,7 @@ async function initDb() {
       ALTER TABLE sessions ADD COLUMN IF NOT EXISTS ip_address TEXT;
       CREATE UNIQUE INDEX IF NOT EXISTS users_telegram_id_unique_idx ON users(telegram_id) WHERE telegram_id IS NOT NULL AND telegram_id <> '';
       CREATE INDEX IF NOT EXISTS courier_handoffs_order_id_idx ON courier_handoffs(order_id);
+      CREATE INDEX IF NOT EXISTS owner_notifications_user_read_idx ON owner_notifications(user_id, is_read, id);
       CREATE INDEX IF NOT EXISTS sessions_user_id_idx ON sessions(user_id);
     `);
   } else {
@@ -326,6 +337,7 @@ async function initDb() {
       CREATE INDEX IF NOT EXISTS sessions_expires_at_idx ON sessions(expires_at);
       CREATE UNIQUE INDEX IF NOT EXISTS users_telegram_id_unique_idx ON users(telegram_id) WHERE telegram_id IS NOT NULL AND telegram_id <> '';
       CREATE INDEX IF NOT EXISTS courier_handoffs_order_id_idx ON courier_handoffs(order_id);
+      CREATE INDEX IF NOT EXISTS owner_notifications_user_read_idx ON owner_notifications(user_id, is_read, id);
     `);
   }
 

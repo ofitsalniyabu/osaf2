@@ -175,6 +175,10 @@ test('login page is served without exposing demo credentials', async () => {
   assert.match(appScriptText, /Qo‘shimcha izoh/);
   assert.match(appScriptText, /customerPhoneLinks/);
   assert.match(appScriptText, /Yetkazishga chiqish/);
+  assert.match(html, /id="tab-washer-mode"/);
+  assert.match(html, /option value="washer">Yuvuvchi/);
+  assert.match(appScriptText, /saveWasherMeasurements/);
+  assert.match(appScriptText, /loadOwnerNotifications/);
   assert.doesNotMatch(html, /id="orderCourierAssignmentFields">[\s\S]*?id="custPhone"/);
   assert.doesNotMatch(html, /preset-sizes-bar|applyPresetToActiveRow/);
   assert.doesNotMatch(html, /fillLoginForm|admin123/);
@@ -492,7 +496,7 @@ test('couriers can register collected items and confirm delivery to the wash sho
       discount: 50000,
       paid_amount: 50000,
       admin_notes: 'Kuryer yuborgan maxfiy izoh',
-      items: [{ category_id: 1, length: 2, width: 3, quantity: 1 }]
+      items: [{ category_id: 1, length: 2, width: 3, quantity: 2 }]
     })
   });
   assert.equal(created.status, 200);
@@ -503,7 +507,7 @@ test('couriers can register collected items and confirm delivery to the wash sho
   assert.equal(order.courier_pickup_id, courierId);
   assert.equal(order.courier_delivery_id, null);
   assert.equal(order.status, 'yangi');
-  assert.equal(order.final_amount, 90000);
+  assert.equal(order.final_amount, 180000);
   assert.equal(order.paid_amount, 0);
   assert.equal(order.admin_notes, '');
 
@@ -530,6 +534,84 @@ test('couriers can register collected items and confirm delivery to the wash sho
   assert.equal(handedOrder.handoffs.length, 1);
   assert.equal(handedOrder.handoffs[0].from_courier_name, 'Jasur Rustamov (Dastavchik #1)');
   assert.equal((await request(`/api/orders/${orderId}`, { cookie: courierSession })).status, 403);
+
+  const washerAccount = await request('/api/users', {
+    cookie: ownerCookie,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      username: 'washer-test',
+      password: 'washer-password-123',
+      full_name: 'Test yuvuvchi',
+      role: 'washer'
+    })
+  });
+  assert.equal(washerAccount.status, 200);
+  const washerLogin = await login('washer-test', 'washer-password-123');
+  assert.equal(washerLogin.data.user.role, 'washer');
+  const washerCookie = washerLogin.cookie.split(';')[0];
+  assert.equal((await request('/api/orders', { cookie: washerCookie })).status, 403);
+  const washerWork = await request('/api/washer/orders', { cookie: washerCookie });
+  assert.equal(washerWork.status, 200);
+  assert.ok((await washerWork.json()).data.some(order => order.id === orderId));
+
+  for (const status of ['yuvishda', 'quritishda', 'qadoqlayapti']) {
+    const advanced = await request(`/api/washer/orders/${orderId}/status`, {
+      cookie: washerCookie,
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ status })
+    });
+    assert.equal(advanced.status, 200);
+  }
+  const itemId = order.items[0].id;
+  const invalidMeasure = await request(`/api/washer/orders/${orderId}/measurements`, {
+    cookie: washerCookie,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ measurements: [{ id: itemId, length: 0, width: 4 }] })
+  });
+  assert.equal(invalidMeasure.status, 400);
+  const measured = await request(`/api/washer/orders/${orderId}/measurements`, {
+    cookie: washerCookie,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ measurements: [{ id: itemId, length: 3, width: 4 }] })
+  });
+  assert.equal(measured.status, 200);
+  assert.equal((await measured.json()).status, 'tayyor');
+  const readyOrder = (await (await request(`/api/orders/${orderId}`, { cookie: ownerCookie })).json()).data;
+  assert.equal(readyOrder.status, 'tayyor');
+  assert.equal(readyOrder.total_area, 24);
+  assert.equal(readyOrder.items[0].subtotal, 360000);
+  assert.equal(readyOrder.payment_status, 'kutilmoqda');
+
+  const assignment = await request(`/api/orders/${orderId}/assign-courier`, {
+    cookie: ownerCookie,
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ courier_delivery_id: courierId })
+  });
+  assert.equal(assignment.status, 200);
+  const startedDelivery = await request(`/api/orders/${orderId}/status`, {
+    cookie: courierSession,
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ status: 'yetkazilmoqda' })
+  });
+  assert.equal(startedDelivery.status, 200);
+  assert.ok((await startedDelivery.json()).notification_warning);
+  const notifications = await request('/api/owner-notifications', { cookie: ownerCookie });
+  const notificationData = (await notifications.json()).data;
+  assert.equal(notifications.status, 200);
+  assert.ok(notificationData.some(notification =>
+    notification.order_id === orderId && notification.message.includes('sexdan olib')
+  ));
+  const markedRead = await request('/api/owner-notifications/read', {
+    cookie: ownerCookie,
+    method: 'POST'
+  });
+  assert.equal(markedRead.status, 200);
 });
 
 test('Telegram status is visible to the owner, webhook is protected, and daily cron requires a secret', async () => {

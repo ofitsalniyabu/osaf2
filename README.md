@@ -12,6 +12,7 @@ Mazkur tizim professional gilam yuvish korxonalari uchun maxsus ishlab chiqilgan
   - Xizmatlar narxlarini (gilam, adyol, parda, gilamcha) o'zgartirish va yangi kategoriyalar qo'shish.
   - Xodimlar (operatorlar va haydovchi-kuryerlar) ro'yxatini boshqarish.
   - Telegram bot va guruh sozlamalarini nazorat qilish.
+  - Dastavchik sexdan tayyor buyurtmani olib ketganda web bildirishnomasi va Telegram xabarini olish.
 - **💼 Admin / Operator:**
   - Mijozlardan yangi buyurtmalarni qabul qilish.
   - Gilam o'lchamlarini (uzunligi, eni, m² hisobi) va adyol/gilamchalarni donalab kiritish.
@@ -23,6 +24,10 @@ Mazkur tizim professional gilam yuvish korxonalari uchun maxsus ishlab chiqilgan
   - Mijoz telefoniga 1 tugma bilan qo'ng'iroq qilish, manzil va mo'ljalni ko'rish.
   - Holatni tezkor o'zgartirish (*"Yetkazishga chiqdim"*, *"Yetkazdim va pulni oldim"*).
   - O'ziga biriktirilgan olib ketish yoki yetkazish vazifasini izoh bilan boshqa faol kuryerga topshirish; topshirishlar buyurtma tarixida qayd etiladi.
+- **🧼 Yuvuvchi:**
+  - Sexga topshirilgan buyurtmalarni alohida ish maydonida yuvish, quritish va qadoqlash bosqichlaridan o'tkazish.
+  - Qadoqlashda gilamlarning haqiqiy uzunligi va enini belgilash; m² va buyurtma summasi avtomatik qayta hisoblanadi.
+  - O'lchamlarni saqlash buyurtmani dastavchikning yetkazishga tayyor ro'yxatiga o'tkazadi. Yuvuvchi yetkazish, to'lov, xodimlar va moliya bo'limlariga kira olmaydi.
 
 ---
 
@@ -48,7 +53,7 @@ Mazkur tizim professional gilam yuvish korxonalari uchun maxsus ishlab chiqilgan
 ### 4. ✈️ Telegram Bot va Guruh Integratsiyasi
 - Admin panel aytgan guruh yoki kanalga har bir buyurtma haqida to'liq hisobot tashlab turiladi:
   - Har bir buyurtma va uning holat xabarlari bir xil ketma-ket raqamni oladi (`#1`, `#2`, `#3`); mavjud GLM buyurtma kodi ham saqlanadi.
-  - Buyurtma kodi va yangi holati (🆕 Yangi $\to$ 🧼 Yuvishda $\to$ ☀️ Quritishda $\to$ ✨ Tayyor $\to$ 🚚 Yetkazilmoqda $\to$ ✅ Yetkazildi);
+  - Buyurtma kodi va yangi holati (🆕 Yangi $\to$ 🧼 Yuvishda $\to$ ☀️ Quritishda $\to$ 📦 Qadoqlayapti $\to$ ✨ Tayyor $\to$ 🚚 Yetkazilmoqda $\to$ ✅ Yetkazildi);
   - Mijoz ismi, telefon raqami, yetkazish manzili va mo'ljali;
   - Qabul qilingan gilam va adyollarning o'lchamlari va soni;
   - Umumiy summa, to'langan mablag' va olinishi kerak bo'lgan qoldiq;
@@ -58,6 +63,7 @@ Mazkur tizim professional gilam yuvish korxonalari uchun maxsus ishlab chiqilgan
 - Excel eksporti faqat avval eksport qilinmagan buyurtmalarni oladi. Muvaffaqiyatli eksport buyurtma ID'larini qayd etadi, keyingi faylga eski buyurtmalar takroran kiritilmaydi.
 - Vercel Cron kunlik Word va Excel hisobotlarni Toshkent vaqti bilan 20:00 da (15:00 UTC) ega Telegram ID va/yoki guruhga yuboradi. Kunlik Excel avval eksport qilinmagan buyurtmalarni qamrab oladi.
 - Egasi faol sessiya/qurilmalarni ko'rishi va bekor qilishi mumkin. Parollar qayta ko'rsatilmaydi; egasi xodim uchun yangi tasodifiy vaqtinchalik parol yaratishi mumkin.
+- Dastavchik sexdan buyurtmani yetkazishga olib chiqqanda egaga web panelda saqlanadigan bildirishnoma va ulangan Telegram akkaunt/guruhga xabar yuboriladi.
 
 ---
 

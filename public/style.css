@@ -966,10 +966,30 @@ body {
 .status-qabul_qilindi { background: rgba(168, 85, 247, 0.15); color: #c084fc; border: 1px solid rgba(168, 85, 247, 0.3); }
 .status-yuvishda { background: rgba(245, 158, 11, 0.15); color: #fbbf24; border: 1px solid rgba(245, 158, 11, 0.3); }
 .status-quritishda { background: rgba(249, 115, 22, 0.15); color: #fb923c; border: 1px solid rgba(249, 115, 22, 0.3); }
+.status-qadoqlayapti { background: rgba(236, 72, 153, 0.15); color: #f472b6; border: 1px solid rgba(236, 72, 153, 0.3); }
 .status-tayyor { background: rgba(16, 185, 129, 0.15); color: #34d399; border: 1px solid rgba(16, 185, 129, 0.3); }
 .status-yetkazilmoqda { background: rgba(99, 102, 241, 0.15); color: #818cf8; border: 1px solid rgba(99, 102, 241, 0.3); }
 .status-yetkazildi { background: rgba(16, 185, 129, 0.2); color: #10b981; border: 1px solid #10b981; }
 .status-bekor_qilindi { background: rgba(239, 68, 68, 0.2); color: #f87171; border: 1px solid #ef4444; }
+
+.washer-order-card .card-body { display: flex; flex-direction: column; gap: 14px; }
+.washer-items-list { display: flex; flex-direction: column; gap: 10px; }
+.washer-measurement-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 10px;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+}
+.washer-measurement-row label { display: flex; align-items: center; gap: 6px; color: var(--text-muted); }
+.washer-measurement-row input { width: 92px; padding: 7px; }
+.washer-order-actions { display: flex; justify-content: flex-end; }
+.owner-notification { padding: 12px 0; border-bottom: 1px solid var(--border-color); }
+.owner-notification p { margin: 5px 0; }
+.owner-notification small { color: var(--text-muted); margin-right: 10px; }
+.owner-notification.is-read { opacity: 0.65; }
 
 /* Filter Card */
 .filter-card {

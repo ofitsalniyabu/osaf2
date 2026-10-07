@@ -168,6 +168,41 @@ async function sendReportsToAdmins(files, caption) {
   return { sent: true, simulated: false, recipients: [...recipients] };
 }
 
+async function notifyOwner(message) {
+  const results = [];
+  try {
+    const recipients = new Set();
+    const configuredAdminId = (await getSetting('telegram_admin_id')) || process.env.TELEGRAM_ADMIN_ID;
+    const groupId = (await getSetting('group_chat_id')) || process.env.TELEGRAM_CHAT_ID;
+    if (configuredAdminId) recipients.add(String(configuredAdminId));
+    if (groupId) recipients.add(String(groupId));
+    const owners = await db.all(`
+      SELECT telegram_id FROM users
+      WHERE role = 'owner' AND status = 'active' AND telegram_id IS NOT NULL AND telegram_id <> ''
+    `);
+    owners.forEach(owner => recipients.add(String(owner.telegram_id)));
+    if (!recipients.size) {
+      return { results: [{ success: false, error: 'Ega uchun Telegram chat ID sozlanmagan' }] };
+    }
+
+    const appUrl = await getAppUrl();
+    for (const chatId of recipients) {
+      try {
+        await sendBotMessage(chatId, message, {
+          inline_keyboard: [[{ text: 'Buyurtmani ilovada ko‘rish', url: appUrl }]]
+        });
+        results.push({ chat_id: chatId, success: true });
+      } catch (error) {
+        results.push({ chat_id: chatId, success: false, error: error.message });
+      }
+    }
+  } catch (error) {
+    console.error('Owner Telegram notification failed:', error.message);
+    results.push({ success: false, error: error.message });
+  }
+  return { results };
+}
+
 async function logBotActivity(chatId, message, status) {
   await db.run(
     'INSERT INTO telegram_logs (chat_id, message, status) VALUES (?, ?, ?)',
@@ -223,7 +258,7 @@ async function processTelegramUpdate(update) {
               COUNT(*) AS total_orders,
               SUM(CASE WHEN status = 'yangi' THEN 1 ELSE 0 END) AS new_orders,
               SUM(CASE WHEN status = 'qabul_qilindi' THEN 1 ELSE 0 END) AS accepted_orders,
-              SUM(CASE WHEN status IN ('yuvishda', 'quritishda') THEN 1 ELSE 0 END) AS washing_orders,
+              SUM(CASE WHEN status IN ('yuvishda', 'quritishda', 'qadoqlayapti') THEN 1 ELSE 0 END) AS washing_orders,
               SUM(CASE WHEN status = 'tayyor' THEN 1 ELSE 0 END) AS ready_orders,
               SUM(CASE WHEN status = 'yetkazilmoqda' THEN 1 ELSE 0 END) AS delivering_orders,
               SUM(CASE WHEN status = 'yetkazildi' THEN 1 ELSE 0 END) AS delivered_orders,
@@ -425,7 +460,8 @@ async function formatOrderMessage(orderId, actionType = 'status_change') {
   if (order.status === 'qabul_qilindi') { statusEmoji = '📦'; statusUz = 'Qabul qilindi (Kuryer oldi)'; }
   else if (order.status === 'yuvishda') { statusEmoji = '🧼'; statusUz = 'Yuvish jarayonida (Sexda)'; }
   else if (order.status === 'quritishda') { statusEmoji = '☀️'; statusUz = 'Quritish kamerasida'; }
-  else if (order.status === 'tayyor') { statusEmoji = '✨'; statusUz = 'Yuvib tayyorlandi (Qadoqlangan)'; }
+  else if (order.status === 'qadoqlayapti') { statusEmoji = '📦'; statusUz = 'Qadoqlanmoqda'; }
+  else if (order.status === 'tayyor') { statusEmoji = '✨'; statusUz = 'Qadoqlangan, yetkazishga tayyor'; }
   else if (order.status === 'yetkazilmoqda') { statusEmoji = '🚚'; statusUz = 'Dastavchik yo\'lda (Yetkazilmoqda)'; }
   else if (order.status === 'yetkazildi') { statusEmoji = '✅'; statusUz = 'Mijozga yetkazib topshirildi'; }
   else if (order.status === 'bekor_qilindi') { statusEmoji = '❌'; statusUz = 'Bekor qilindi'; }
@@ -502,6 +538,7 @@ async function formatOrderMessage(orderId, actionType = 'status_change') {
 }
 
 module.exports = {
+  escapeHtml,
   sendTelegramMessage,
   formatOrderMessage,
   getSetting,
@@ -510,5 +547,6 @@ module.exports = {
   getBotStatus,
   processTelegramUpdate,
   notifyCourierHandoff,
-  sendReportsToAdmins
+  sendReportsToAdmins,
+  notifyOwner
 };

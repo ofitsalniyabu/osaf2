@@ -3,7 +3,11 @@ let currentUser = null; // { id, username, full_name, role, phone, car_model, ca
 let globalCategories = [];
 let globalCouriers = [];
 let globalOrders = [];
+let globalWasherOrders = [];
 let authenticatedDataLoaded = false;
+let workflowRefreshTimer = null;
+let ownerNotificationInitialized = false;
+let latestOwnerNotificationId = 0;
 
 function togglePasswordVisibility(inputId, button) {
   const input = document.getElementById(inputId || 'loginPassword');
@@ -306,24 +310,36 @@ async function initializeAuthenticatedApp() {
   if (authenticatedDataLoaded) return;
   authenticatedDataLoaded = true;
 
-  await loadCategories();
-  if (currentUser.role !== 'courier') {
+  if (currentUser.role !== 'washer') await loadCategories();
+  if (['owner', 'admin'].includes(currentUser.role)) {
     await loadStaff();
     await loadDashboardStats();
-  } else {
+  } else if (currentUser.role === 'courier') {
     const response = await fetch('/api/couriers');
     const result = await response.json();
     if (!response.ok || !result.success) throw new Error(result.error || 'Kuryerlar ro‘yxati yuklanmadi');
     globalCouriers = result.data;
   }
-  await loadOrders();
+  if (currentUser.role === 'washer') {
+    await loadWasherOrders();
+  } else {
+    await loadOrders();
+  }
   if (currentUser.role === 'owner') await loadTgSettings();
 
-  if (currentUser.role !== 'courier') {
+  if (['owner', 'admin'].includes(currentUser.role)) {
     addNewItemRow();
     addNewItemRow();
     runQuickCalc();
   }
+  if (currentUser.role === 'owner') await loadOwnerNotifications();
+  if (workflowRefreshTimer) clearInterval(workflowRefreshTimer);
+  workflowRefreshTimer = setInterval(() => {
+    if (!currentUser) return;
+    if (currentUser.role === 'washer') loadWasherOrders();
+    else loadOrders();
+    if (currentUser.role === 'owner') loadOwnerNotifications();
+  }, 30000);
 }
 
 async function handleLogin(e) {
@@ -368,6 +384,10 @@ async function handleLogout() {
     }
     currentUser = null;
     authenticatedDataLoaded = false;
+    ownerNotificationInitialized = false;
+    latestOwnerNotificationId = 0;
+    if (workflowRefreshTimer) clearInterval(workflowRefreshTimer);
+    workflowRefreshTimer = null;
     document.getElementById('mainAppLayout').style.display = 'none';
     document.getElementById('loginScreen').style.display = 'flex';
     showToast("Tizimdan muvaffaqiyatli chiqildi", "info");
@@ -415,15 +435,22 @@ function applyUserSession() {
   const roleNames = {
     'owner': 'Ega Admin',
     'admin': 'Operator / Admin',
-    'courier': `Dastavchik (${currentUser.car_model || 'Mashina'})`
+    'courier': `Dastavchik (${currentUser.car_model || 'Mashina'})`,
+    'washer': 'Yuvuvchi'
   };
   document.getElementById('sidebarUserRoleBadge').innerText = roleNames[currentUser.role] || currentUser.role;
 
   const ownerElements = document.querySelectorAll('.owner-only');
+  document.querySelectorAll('.nav-washer').forEach(el => el.style.display = currentUser.role === 'washer' ? 'flex' : 'none');
+  const notificationPanel = document.getElementById('ownerNotificationsPanel');
+  if (notificationPanel) notificationPanel.style.display = currentUser.role === 'owner' ? 'block' : 'none';
 
   if (currentUser.role === 'courier') {
     ownerElements.forEach(el => el.style.display = 'none');
+    document.getElementById('tab-new-order').style.display = '';
     document.querySelectorAll('.nav-dashboard, .nav-orders, .nav-reports').forEach(el => el.style.display = 'none');
+    document.querySelectorAll('.nav-new-order').forEach(el => el.style.display = 'flex');
+    document.querySelectorAll('.nav-courier').forEach(el => el.style.display = 'flex');
     document.querySelectorAll('.courier-hidden-finance').forEach(el => el.style.display = 'none');
     document.getElementById('orderCourierAssignmentFields').style.display = 'none';
     
@@ -435,14 +462,24 @@ function applyUserSession() {
     document.getElementById('courierDashboardTitle').innerHTML = `<i class="fa-solid fa-truck"></i> Mening Buyurtmalarim`;
 
     switchTab('courier-mode');
+  } else if (currentUser.role === 'washer') {
+    ownerElements.forEach(el => el.style.display = 'none');
+    document.querySelectorAll('.nav-dashboard, .nav-orders, .nav-new-order, .nav-courier, .nav-reports').forEach(el => el.style.display = 'none');
+    document.querySelectorAll('.courier-hidden-finance').forEach(el => el.style.display = 'none');
+    document.getElementById('tab-new-order').style.display = 'none';
+    switchTab('washer-mode');
   } else if (currentUser.role === 'admin') {
     ownerElements.forEach(el => el.style.display = 'none');
+    document.querySelectorAll('.nav-washer').forEach(el => el.style.display = 'none');
+    document.getElementById('tab-new-order').style.display = '';
     document.querySelectorAll('.nav-dashboard, .nav-orders, .nav-new-order, .nav-courier').forEach(el => el.style.display = 'flex');
     if (document.getElementById('courierActiveSelect')) document.getElementById('courierActiveSelect').disabled = false;
     switchTab('dashboard');
   } else {
     // Ega Admin
     ownerElements.forEach(el => el.style.display = 'flex');
+    document.querySelectorAll('.nav-washer').forEach(el => el.style.display = 'none');
+    document.getElementById('tab-new-order').style.display = '';
     document.querySelectorAll('.nav-dashboard, .nav-orders, .nav-new-order, .nav-courier').forEach(el => el.style.display = 'flex');
     if (document.getElementById('courierActiveSelect')) document.getElementById('courierActiveSelect').disabled = false;
     switchTab('dashboard');
@@ -469,6 +506,7 @@ function switchTab(tabId) {
     'orders': { title: "Buyurtmalar Ro'yxati", sub: "Barcha qabul qilingan, yuvilayotgan va yetkazilgan gilamlar" },
     'new-order': { title: "Yangi Buyurtma Qabul Qilish", sub: currentUser.role === 'courier' ? "Mijozdan olgan gilam, to‘shak va buyumlarni ro‘yxatdan o‘tkazing" : "Gilam o'lchamlari (uzunlik, eni, m²), adyol va gilamchalar hisobi" },
     'courier-mode': { title: "Dastavchik Ish Maydoni", sub: "Olingan buyurtmalarni sexga topshiring va tayyorlarini yetkazib bering" },
+    'washer-mode': { title: "Yuvuvchi Ish Maydoni", sub: "Yuvishdan qadoqlashgacha va gilam o‘lchovlarini saqlash" },
     'pricing': { title: "Kategoriya va Xizmat Narxlari", sub: "Gilam, adyol, parda va buyumlar narxlarini belgilash" },
     'staff': { title: "Xodimlar va Dastavchiklar", sub: "Adminlar, operatorlar va mashinali kuryerlar ro'yxati" },
     'sessions': { title: "Faol qurilmalar", sub: "Tizimga kirgan qurilmalarni ko‘ring va shubhali sessiyalarni bekor qiling" },
@@ -482,6 +520,7 @@ function switchTab(tabId) {
   }
 
   if (tabId === 'courier-mode') renderCourierDeliveries();
+  if (tabId === 'washer-mode') renderWasherOrders();
   if (tabId === 'orders') loadOrders();
   if (tabId === 'reports') loadReceiptsList();
   if (tabId === 'telegram-config') {
@@ -691,7 +730,8 @@ function renderStaffTable(users) {
   const roleLabels = {
     'owner': '<span class="status-pill status-yetkazildi"><i class="fa-solid fa-user-shield" aria-hidden="true"></i> Ega Admin</span>',
     'admin': '<span class="status-pill status-yangi"><i class="fa-solid fa-user-gear" aria-hidden="true"></i> Operator / Admin</span>',
-    'courier': '<span class="status-pill status-yetkazilmoqda"><i class="fa-solid fa-truck-fast" aria-hidden="true"></i> Dastavchik</span>'
+    'courier': '<span class="status-pill status-yetkazilmoqda"><i class="fa-solid fa-truck-fast" aria-hidden="true"></i> Dastavchik</span>',
+    'washer': '<span class="status-pill status-qadoqlayapti"><i class="fa-solid fa-soap" aria-hidden="true"></i> Yuvuvchi</span>'
   };
 
   tbody.innerHTML = users.map(u => `
@@ -1045,6 +1085,158 @@ async function loadOrders() {
   }
 }
 
+async function loadWasherOrders() {
+  try {
+    const response = await fetch('/api/washer/orders');
+    const result = await response.json();
+    if (!response.ok || !result.success) throw new Error(result.error || 'Yuvish buyurtmalarini yuklab bo‘lmadi');
+    globalWasherOrders = result.data;
+    renderWasherOrders();
+  } catch (error) {
+    console.error('Washer orders error:', error);
+  }
+}
+
+function renderWasherOrders() {
+  const container = document.getElementById('washerOrdersContainer');
+  if (!container) return;
+  if (!globalWasherOrders.length) {
+    container.innerHTML = `<div class="card p-4 text-center" style="grid-column: 1/-1; padding: 40px; color: var(--text-muted);">
+      <i class="fa-solid fa-soap" style="font-size: 40px; margin-bottom: 12px; color: #cbd5e1;"></i>
+      <h3>Yuvish uchun yangi buyurtma yo‘q</h3>
+      <p>Sexga topshirilgan buyurtmalar shu yerda ko‘rinadi.</p>
+    </div>`;
+    return;
+  }
+
+  const stages = {
+    qabul_qilindi: { label: 'Sexga qabul qilindi', next: 'yuvishda', nextLabel: 'Yuvishni boshlash', icon: 'fa-play' },
+    yuvishda: { label: 'Yuvishda', next: 'quritishda', nextLabel: 'Quritishga o‘tkazish', icon: 'fa-fan' },
+    quritishda: { label: 'Quritishda', next: 'qadoqlayapti', nextLabel: 'Qadoqlashni boshlash', icon: 'fa-box' },
+    qadoqlayapti: { label: 'Qadoqlayapti', next: null, nextLabel: null, icon: 'fa-ruler-combined' }
+  };
+  container.innerHTML = globalWasherOrders.map(order => {
+    const stage = stages[order.status];
+    const carpets = order.items.filter(item => item.unit === 'kv_m');
+    const itemsHtml = order.items.map(item => {
+      if (item.unit === 'kv_m') {
+        return `<div class="washer-measurement-row">
+          <strong>${escapeHtml(item.item_type)}</strong>
+          <label>Uzunligi (m)
+            <input type="number" min="0.01" max="100" step="0.01" id="washer-length-${Number(item.id)}" value="${Number(item.length) || ''}" ${order.status === 'qadoqlayapti' ? '' : 'disabled'}>
+          </label>
+          <label>Eni (m)
+            <input type="number" min="0.01" max="100" step="0.01" id="washer-width-${Number(item.id)}" value="${Number(item.width) || ''}" ${order.status === 'qadoqlayapti' ? '' : 'disabled'}>
+          </label>
+          <span>${Number(item.quantity)} dona${item.notes ? ` · ${escapeHtml(item.notes)}` : ''}</span>
+        </div>`;
+      }
+      return `<div class="washer-measurement-row">
+        <strong>${escapeHtml(item.item_type)}</strong><span>${Number(item.quantity)} dona${item.notes ? ` · ${escapeHtml(item.notes)}` : ''}</span>
+      </div>`;
+    }).join('');
+    const action = stage.next
+      ? `<button class="btn btn-primary" onclick="advanceWasherOrder(${Number(order.id)}, '${stage.next}')"><i class="fa-solid ${stage.icon}"></i> ${stage.nextLabel}</button>`
+      : `<button class="btn btn-success" onclick="saveWasherMeasurements(${Number(order.id)})"><i class="fa-solid fa-floppy-disk"></i> O‘lchamlarni saqlash va yetkazishga tayyorlash</button>`;
+    return `<article class="card washer-order-card">
+      <div class="card-header">
+        <h3>${escapeHtml(order.order_number)}</h3>
+        <span class="status-pill status-${order.status}">${stage.label}</span>
+      </div>
+      <div class="card-body">
+        <div class="washer-items-list">${itemsHtml || '<p class="hint">Buyumlar topilmadi</p>'}</div>
+        ${order.status === 'qadoqlayapti' ? '<p class="hint">Gilamlarning haqiqiy uzunligi va enini kiriting. Saqlanganda jami m² hisoblanib, buyurtma dastavchikning yetkazish ro‘yxatiga o‘tadi.</p>' : ''}
+        <div class="washer-order-actions">${action}</div>
+      </div>
+    </article>`;
+  }).join('');
+}
+
+async function advanceWasherOrder(orderId, status) {
+  try {
+    const response = await fetch(`/api/washer/orders/${orderId}/status`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ status })
+    });
+    const result = await response.json();
+    if (!response.ok || !result.success) throw new Error(result.error || 'Jarayon bosqichi saqlanmadi');
+    showToast('Buyurtma keyingi bosqichga o‘tkazildi');
+    await loadWasherOrders();
+  } catch (error) {
+    alert(error.message);
+  }
+}
+
+async function saveWasherMeasurements(orderId) {
+  const order = globalWasherOrders.find(item => Number(item.id) === Number(orderId));
+  if (!order) return;
+  const measurements = order.items.filter(item => item.unit === 'kv_m').map(item => ({
+    id: Number(item.id),
+    length: Number(document.getElementById(`washer-length-${Number(item.id)}`).value),
+    width: Number(document.getElementById(`washer-width-${Number(item.id)}`).value)
+  }));
+  if (measurements.some(item => !Number.isFinite(item.length) || !Number.isFinite(item.width) ||
+      item.length <= 0 || item.width <= 0)) {
+    alert('Har bir gilamning uzunligi va enini 0 dan katta qilib kiriting.');
+    return;
+  }
+  try {
+    const response = await fetch(`/api/washer/orders/${orderId}/measurements`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ measurements })
+    });
+    const result = await response.json();
+    if (!response.ok || !result.success) throw new Error(result.error || 'O‘lchamlarni saqlab bo‘lmadi');
+    showToast(`O‘lchamlar saqlandi: ${Number(result.total_area).toFixed(2)} m². Buyurtma yetkazishga tayyor.`);
+    await loadWasherOrders();
+  } catch (error) {
+    alert(error.message);
+  }
+}
+
+async function loadOwnerNotifications() {
+  if (currentUser?.role !== 'owner') return;
+  try {
+    const response = await fetch('/api/owner-notifications');
+    const result = await response.json();
+    if (!response.ok || !result.success) throw new Error(result.error || 'Bildirishnomalarni yuklab bo‘lmadi');
+    const notifications = result.data || [];
+    const unread = notifications.filter(item => !item.is_read);
+    const newestId = notifications.reduce((latest, item) => Math.max(latest, Number(item.id)), 0);
+    document.getElementById('ownerNotificationCount').textContent = `${unread.length} ta yangi`;
+    const container = document.getElementById('ownerNotificationsList');
+    container.innerHTML = notifications.length
+      ? notifications.map(item => `<div class="owner-notification ${item.is_read ? 'is-read' : ''}">
+          <strong>${escapeHtml(item.title)}</strong>
+          <p>${escapeHtml(item.message)}</p>
+          <small>${escapeHtml(item.created_at)}</small>
+          <button class="btn btn-sm btn-outline" onclick="viewOrderDetails(${Number(item.order_id)})">Buyurtmani ko‘rish</button>
+        </div>`).join('')
+      : '<p class="hint">Hozircha sexdan olingan buyurtmalar haqida xabar yo‘q.</p>';
+    if (ownerNotificationInitialized && newestId > latestOwnerNotificationId) {
+      const newest = notifications.find(item => Number(item.id) === newestId);
+      if (newest) showToast(newest.title, 'info');
+    }
+    ownerNotificationInitialized = true;
+    latestOwnerNotificationId = Math.max(latestOwnerNotificationId, newestId);
+  } catch (error) {
+    console.error('Owner notifications error:', error);
+  }
+}
+
+async function markOwnerNotificationsRead() {
+  try {
+    const response = await fetch('/api/owner-notifications/read', { method: 'POST' });
+    const result = await response.json();
+    if (!response.ok || !result.success) throw new Error(result.error || 'Bildirishnomalar yangilanmadi');
+    await loadOwnerNotifications();
+  } catch (error) {
+    alert(error.message);
+  }
+}
+
 function filterOrders() {
   const query = document.getElementById('orderSearchInput').value.toLowerCase().trim();
   const status = document.getElementById('statusFilter').value;
@@ -1074,7 +1266,8 @@ function getStatusPill(status) {
     'qabul_qilindi': { label: 'Qabul qilindi', icon: 'fa-box-open', cls: 'status-qabul_qilindi' },
     'yuvishda': { label: 'Yuvishda', icon: 'fa-soap', cls: 'status-yuvishda' },
     'quritishda': { label: 'Quritishda', icon: 'fa-fan', cls: 'status-quritishda' },
-    'tayyor': { label: 'Tayyor (Qadoqda)', icon: 'fa-box', cls: 'status-tayyor' },
+    'qadoqlayapti': { label: 'Qadoqlayapti', icon: 'fa-box', cls: 'status-qadoqlayapti' },
+    'tayyor': { label: 'Tayyor (Qadoqlangan)', icon: 'fa-box-open', cls: 'status-tayyor' },
     'yetkazilmoqda': { label: 'Yetkazilmoqda', icon: 'fa-truck-fast', cls: 'status-yetkazilmoqda' },
     'yetkazildi': { label: 'Yetkazildi', icon: 'fa-circle-check', cls: 'status-yetkazildi' },
     'bekor_qilindi': { label: 'Bekor qilindi', icon: 'fa-circle-xmark', cls: 'status-bekor_qilindi' }
@@ -1249,7 +1442,7 @@ function renderCourierDeliveries() {
       : '';
     const deliveryHandoff = currentUser.role === 'courier' &&
       ord.courier_delivery_id === currentUser.id &&
-      ['qabul_qilindi', 'yuvishda', 'quritishda', 'tayyor', 'yetkazilmoqda'].includes(ord.status)
+    ['qabul_qilindi', 'yuvishda', 'quritishda', 'qadoqlayapti', 'tayyor', 'yetkazilmoqda'].includes(ord.status)
       ? renderCourierHandoffControl(ord.id, 'delivery', 'Yetkazishni topshirish')
       : '';
 
@@ -1384,6 +1577,7 @@ async function quickUpdateStatus(orderId, newStatus, autoPayAmount = null) {
     const json = await res.json();
     if (!res.ok || !json.success) throw new Error(json.error || 'Buyurtma holatini yangilab bo‘lmadi');
     showToast('Buyurtma holati yangilandi');
+    if (json.notification_warning) showToast(json.notification_warning, 'info');
     if (currentUser.role !== 'courier') await loadDashboardStats();
     await loadOrders();
   } catch (error) {
@@ -1566,7 +1760,8 @@ async function viewOrderDetails(orderId) {
             <option value="qabul_qilindi" ${ord.status === 'qabul_qilindi' ? 'selected' : ''}>Qabul qilindi (Kuryer oldi)</option>
             <option value="yuvishda" ${ord.status === 'yuvishda' ? 'selected' : ''}>Yuvish jarayonida</option>
             <option value="quritishda" ${ord.status === 'quritishda' ? 'selected' : ''}>Quritish kamerasida</option>
-            <option value="tayyor" ${ord.status === 'tayyor' ? 'selected' : ''}>Tayyorlandi (Qadoqlangan)</option>
+            <option value="qadoqlayapti" ${ord.status === 'qadoqlayapti' ? 'selected' : ''}>Qadoqlayapti</option>
+            <option value="tayyor" ${ord.status === 'tayyor' ? 'selected' : ''}>Tayyor (Qadoqlangan)</option>
             <option value="yetkazilmoqda" ${ord.status === 'yetkazilmoqda' ? 'selected' : ''}>Kuryer yo'lda (Yetkazilmoqda)</option>
             <option value="yetkazildi" ${ord.status === 'yetkazildi' ? 'selected' : ''}>Yetkazib topshirildi</option>
             <option value="bekor_qilindi" ${ord.status === 'bekor_qilindi' ? 'selected' : ''}>Bekor qilindi</option>

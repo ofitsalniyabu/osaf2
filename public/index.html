@@ -108,6 +108,10 @@
           <i class="fa-solid fa-truck-fast"></i>
           <span>Dastavchik Ish Maydoni</span>
         </button>
+        <button class="nav-item nav-washer" onclick="switchTab('washer-mode')">
+          <i class="fa-solid fa-soap"></i>
+          <span>Yuvuvchi Ish Maydoni</span>
+        </button>
         <button class="nav-item owner-only" onclick="switchTab('pricing')">
           <i class="fa-solid fa-tags"></i>
           <span>Kategoriya & Narxlar</span>
@@ -168,6 +172,18 @@
 
         <!-- ================= 1. DASHBOARD ================= -->
         <section id="tab-dashboard" class="tab-pane active">
+          <div class="card mb-3" id="ownerNotificationsPanel" style="display: none;">
+            <div class="card-header">
+              <h3><i class="fa-solid fa-bell"></i> Sexdan yetkazishga chiqqan buyurtmalar</h3>
+              <div class="d-flex gap-2 align-items-center">
+                <span id="ownerNotificationCount" class="status-pill status-yetkazilmoqda">0 ta yangi</span>
+                <button class="btn btn-sm btn-outline" onclick="markOwnerNotificationsRead()">O‘qilgan deb belgilash</button>
+              </div>
+            </div>
+            <div class="card-body" id="ownerNotificationsList">
+              <p class="hint">Dastavchik sexdan buyurtmani olganda shu yerda xabar ko‘rinadi.</p>
+            </div>
+          </div>
           <div class="stats-grid">
             <div class="stat-card blue">
               <div class="stat-icon"><i class="fa-solid fa-boxes-stacked"></i></div>
@@ -304,6 +320,7 @@
                   <option value="qabul_qilindi">Qabul qilindi</option>
                   <option value="yuvishda">Yuvishda</option>
                   <option value="quritishda">Quritishda</option>
+                  <option value="qadoqlayapti">Qadoqlayapti</option>
                   <option value="tayyor">Tayyor (Qadoqlangan)</option>
                   <option value="yetkazilmoqda">Yetkazilmoqda</option>
                   <option value="yetkazildi">Yetkazildi</option>
@@ -562,6 +579,21 @@
           </div>
 
           <div class="courier-orders-grid mt-3" id="courierOrdersContainer"></div>
+        </section>
+
+        <section id="tab-washer-mode" class="tab-pane">
+          <div class="card courier-control-bar">
+            <div class="d-flex align-items-center justify-between flex-wrap gap-2">
+              <div>
+                <h3><i class="fa-solid fa-soap"></i> Yuvuvchi ish maydoni</h3>
+                <p>Yuvish, quritish, qadoqlash va gilam o‘lchamlarini saqlash</p>
+              </div>
+              <button class="btn btn-outline" onclick="loadWasherOrders()">
+                <i class="fa-solid fa-rotate"></i> Yangilash
+              </button>
+            </div>
+          </div>
+          <div class="courier-orders-grid mt-3" id="washerOrdersContainer"></div>
         </section>
 
         <!-- ================= 5. KATEGORIYA VA NARXLAR ================= -->
@@ -920,6 +952,7 @@
             <label>Lavozim (Rol)</label>
             <select id="newStaffRole">
               <option value="courier">Dastavchik (Kuryer)</option>
+              <option value="washer">Yuvuvchi</option>
               <option value="admin">Operator / Admin</option>
               <option value="owner">Ega Admin</option>
             </select>

@@ -51,6 +51,7 @@ app.use('/api', (req, res, next) => {
     (req.path === '/auth/logout' ||
      req.path === '/telegram/test' ||
      req.path === '/telegram/setup' ||
+     req.path === '/owner-notifications/read' ||
      /^\/users\/\d+\/reset-password$/.test(req.path) ||
      /^\/orders\/\d+\/send-telegram$/.test(req.path));
   const requiresBody = ['POST', 'PUT', 'PATCH'].includes(req.method) && !bodylessPost;
@@ -373,9 +374,189 @@ app.use('/api', async (req, res, next) => {
     }
     req.user = user;
     req.sessionTokenHash = tokenHash;
+    if (user.role === 'washer' &&
+        !(req.method === 'GET' && req.path === '/auth/me') &&
+        !(req.method === 'POST' && ['/auth/logout', '/auth/change-password'].includes(req.path)) &&
+        !(req.method === 'GET' && req.path === '/washer/orders') &&
+        !(/^\/washer\/orders\/\d+\/(status|measurements)$/.test(req.path) && req.method === 'POST')) {
+      return res.status(403).json({ success: false, error: 'Yuvuvchi faqat yuvish ish maydonidan foydalanishi mumkin' });
+    }
     next();
   } catch (err) {
     next(err);
+  }
+});
+
+app.get('/api/owner-notifications', async (req, res) => {
+  if (req.user.role !== 'owner') {
+    return res.status(403).json({ success: false, error: 'Bildirishnomalarni faqat egasi ko‘ra oladi' });
+  }
+  try {
+    const notifications = await db.all(`
+      SELECT id, order_id, title, message, is_read, created_at
+      FROM owner_notifications
+      WHERE user_id = ?
+      ORDER BY id DESC
+      LIMIT 30
+    `, [req.user.id]);
+    res.json({ success: true, data: notifications });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+app.post('/api/owner-notifications/read', async (req, res) => {
+  if (req.user.role !== 'owner') {
+    return res.status(403).json({ success: false, error: 'Bildirishnomalarni faqat egasi boshqara oladi' });
+  }
+  try {
+    await db.run('UPDATE owner_notifications SET is_read = 1 WHERE user_id = ? AND is_read = 0', [req.user.id]);
+    res.json({ success: true });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+app.get('/api/washer/orders', async (req, res) => {
+  if (req.user.role !== 'washer') {
+    return res.status(403).json({ success: false, error: 'Bu ish maydoni faqat yuvuvchi uchun' });
+  }
+  try {
+    const orders = await db.all(`
+      SELECT id, order_number, status, created_at
+      FROM orders
+      WHERE status IN ('qabul_qilindi', 'yuvishda', 'quritishda', 'qadoqlayapti')
+      ORDER BY id DESC
+    `);
+    const data = await Promise.all(orders.map(async order => ({
+      ...order,
+      items: await db.all(`
+        SELECT oi.id, oi.item_type, oi.length, oi.width, oi.area, oi.quantity, oi.notes,
+          c.unit
+        FROM order_items oi
+        JOIN categories c ON c.id = oi.category_id
+        WHERE oi.order_id = ?
+        ORDER BY oi.id
+      `, [order.id])
+    })));
+    res.json({ success: true, data });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+app.post('/api/washer/orders/:id/status', async (req, res) => {
+  if (req.user.role !== 'washer') {
+    return res.status(403).json({ success: false, error: 'Bu amal faqat yuvuvchi uchun' });
+  }
+  try {
+    const { status } = req.body;
+    const order = await db.get('SELECT id, status FROM orders WHERE id = ?', [req.params.id]);
+    if (!order) return res.status(404).json({ success: false, error: 'Buyurtma topilmadi' });
+    const nextStatus = {
+      qabul_qilindi: 'yuvishda',
+      yuvishda: 'quritishda',
+      quritishda: 'qadoqlayapti'
+    }[order.status];
+    if (status !== nextStatus) {
+      return res.status(400).json({ success: false, error: 'Buyurtmani keyingi yuvish bosqichiga o‘tkazing' });
+    }
+    await db.run('UPDATE orders SET status = ? WHERE id = ?', [status, order.id]);
+    res.json({ success: true, status });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+app.post('/api/washer/orders/:id/measurements', async (req, res) => {
+  if (req.user.role !== 'washer') {
+    return res.status(403).json({ success: false, error: 'Gilam o‘lchamini faqat yuvuvchi saqlay oladi' });
+  }
+  try {
+    const measurements = req.body.measurements;
+    if (!Array.isArray(measurements) || measurements.length > 500) {
+      return res.status(400).json({ success: false, error: 'O‘lchamlar ro‘yxati noto‘g‘ri' });
+    }
+    const order = await db.get('SELECT * FROM orders WHERE id = ?', [req.params.id]);
+    if (!order) return res.status(404).json({ success: false, error: 'Buyurtma topilmadi' });
+    if (order.status !== 'qadoqlayapti') {
+      return res.status(409).json({ success: false, error: 'O‘lchamlarni faqat qadoqlash bosqichida saqlash mumkin' });
+    }
+
+    const items = await db.all(`
+      SELECT oi.id, oi.order_id, oi.unit_price, oi.subtotal, oi.quantity, oi.area, c.unit
+      FROM order_items oi
+      JOIN categories c ON c.id = oi.category_id
+      WHERE oi.order_id = ?
+      ORDER BY oi.id
+    `, [order.id]);
+    const carpetItems = items.filter(item => item.unit === 'kv_m');
+    if (measurements.length !== carpetItems.length) {
+      return res.status(400).json({ success: false, error: 'Har bir gilam uchun uzunlik va enni kiriting' });
+    }
+
+    const byId = new Map();
+    for (const measurement of measurements) {
+      const id = Number(measurement && measurement.id);
+      const length = Number(measurement && measurement.length);
+      const width = Number(measurement && measurement.width);
+      if (!Number.isInteger(id) || !Number.isFinite(length) || !Number.isFinite(width) ||
+          length <= 0 || width <= 0 || length > 100 || width > 100 || byId.has(id)) {
+        return res.status(400).json({ success: false, error: 'Gilam o‘lchami 0 dan katta va 100 metrdan oshmasligi kerak' });
+      }
+      byId.set(id, { length, width });
+    }
+    if (carpetItems.some(item => !byId.has(item.id))) {
+      return res.status(400).json({ success: false, error: 'Faqat shu buyurtmadagi barcha gilamlar o‘lchamini yuboring' });
+    }
+
+    let totalArea = 0;
+    let totalAmount = 0;
+    await db.transaction(async transaction => {
+      for (const item of items) {
+        const measurement = byId.get(item.id);
+        const area = measurement
+          ? Math.round(measurement.length * measurement.width * Number(item.quantity || 1) * 100) / 100
+          : Number(item.area || 0);
+        const subtotal = measurement
+          ? Math.round(Number(item.unit_price) * area)
+          : Number(item.subtotal);
+        if (!Number.isFinite(area) || !Number.isSafeInteger(subtotal) || subtotal < 0) {
+          throw new Error('O‘lcham bo‘yicha summa juda katta');
+        }
+        if (measurement) {
+          await transaction.run(`
+            UPDATE order_items SET length = ?, width = ?, area = ?, subtotal = ?
+            WHERE id = ? AND order_id = ?
+          `, [measurement.length, measurement.width, area, subtotal, item.id, order.id]);
+        }
+        if (item.unit === 'kv_m') totalArea += area;
+        totalAmount += subtotal;
+      }
+      totalArea = Math.round(totalArea * 100) / 100;
+      totalAmount = Math.round(totalAmount * 100) / 100;
+      const finalAmount = Math.max(0, totalAmount - Number(order.discount || 0));
+      if (finalAmount < Number(order.paid_amount || 0)) {
+        throw new Error('Yangi o‘lcham bo‘yicha jami summa oldindan to‘langan summadan kam');
+      }
+      const paymentStatus = finalAmount > 0 && Number(order.paid_amount || 0) >= finalAmount
+        ? 'tolandi'
+        : Number(order.paid_amount || 0) > 0
+          ? 'qisman'
+          : 'kutilmoqda';
+      await transaction.run(`
+        UPDATE orders
+        SET total_area = ?, total_amount = ?, final_amount = ?, payment_status = ?, status = 'tayyor'
+        WHERE id = ?
+      `, [totalArea, totalAmount, finalAmount, paymentStatus, order.id]);
+    });
+    res.json({ success: true, status: 'tayyor', total_area: totalArea, total_amount: totalAmount });
+  } catch (error) {
+    const isMeasurementError = [
+      'Yangi o‘lcham bo‘yicha jami summa oldindan to‘langan summadan kam',
+      'O‘lcham bo‘yicha summa juda katta'
+    ].includes(error.message);
+    res.status(isMeasurementError ? 400 : 500).json({ success: false, error: error.message });
   }
 });
 
@@ -473,7 +654,7 @@ app.get('/api/stats', async (req, res) => {
       SELECT 
         COUNT(*) as total_orders,
         SUM(CASE WHEN status = 'yangi' THEN 1 ELSE 0 END) as new_orders,
-        SUM(CASE WHEN status = 'yuvishda' THEN 1 ELSE 0 END) as washing_orders,
+        SUM(CASE WHEN status IN ('yuvishda', 'quritishda', 'qadoqlayapti') THEN 1 ELSE 0 END) as washing_orders,
         SUM(CASE WHEN status = 'yetkazilmoqda' THEN 1 ELSE 0 END) as delivering_orders,
         SUM(CASE WHEN status = 'yetkazildi' THEN 1 ELSE 0 END) as completed_orders,
         COALESCE(SUM(final_amount), 0) as total_revenue,
@@ -835,7 +1016,7 @@ app.patch('/api/orders/:id/status', async (req, res) => {
         });
       }
     }
-    if (!['yangi', 'qabul_qilindi', 'yuvishda', 'quritishda', 'tayyor', 'yetkazilmoqda', 'yetkazildi', 'bekor_qilindi'].includes(status)) {
+    if (!['yangi', 'qabul_qilindi', 'yuvishda', 'quritishda', 'qadoqlayapti', 'tayyor', 'yetkazilmoqda', 'yetkazildi', 'bekor_qilindi'].includes(status)) {
       return res.status(400).json({ success: false, error: 'Buyurtma holati noto‘g‘ri' });
     }
 
@@ -870,12 +1051,45 @@ app.patch('/api/orders/:id/status', async (req, res) => {
       }
     }
 
-    await db.run(`
-      UPDATE orders 
-      SET status = ?, courier_notes = COALESCE(?, courier_notes), 
-          delivered_date = ?, paid_amount = ?, payment_status = ?
-      WHERE id = ?
-    `, [status, courier_notes || null, deliveredDate, updatedPaid, updatedPayStatus, orderId]);
+    let dispatchNotification = null;
+    let dispatchMessage = '';
+    let ownerNotificationRows = [];
+    const isCourierDispatch = req.user.role === 'courier' &&
+      order.status === 'tayyor' && status === 'yetkazilmoqda';
+    if (isCourierDispatch) {
+      const [owners, items] = await Promise.all([
+        db.all("SELECT id FROM users WHERE role = 'owner' AND status = 'active'"),
+        db.all('SELECT item_type, quantity, area FROM order_items WHERE order_id = ? ORDER BY id', [orderId])
+      ]);
+      const itemSummary = items.map(item => {
+        const size = Number(item.area) > 0 ? ` — ${Number(item.area).toFixed(2)} m²` : '';
+        return `${item.item_type} (${item.quantity} dona${size})`;
+      }).join(', ');
+      const notificationTitle = `${order.order_number}: dastavchik sexdan oldi`;
+      const notificationMessage = `${req.user.full_name} buyurtmani sexdan olib, mijozga yetkazishga chiqdi. Buyumlar: ${itemSummary || 'ko‘rsatilmagan'}.`;
+      ownerNotificationRows = owners.map(owner => [owner.id, orderId, notificationTitle, notificationMessage]);
+      dispatchMessage =
+        `🚚 <b>${telegram.escapeHtml(order.order_number)} — dastavchik sexdan oldi</b>\n` +
+        `Dastavchik: ${telegram.escapeHtml(req.user.full_name)}\n` +
+        `Buyumlar: ${telegram.escapeHtml(itemSummary || 'ko‘rsatilmagan')}\n` +
+        `Holati: Yetkazilmoqda`;
+    }
+
+    await db.transaction(async transaction => {
+      await transaction.run(`
+        UPDATE orders
+        SET status = ?, courier_notes = COALESCE(?, courier_notes),
+            delivered_date = ?, paid_amount = ?, payment_status = ?
+        WHERE id = ?
+      `, [status, courier_notes || null, deliveredDate, updatedPaid, updatedPayStatus, orderId]);
+      for (const notification of ownerNotificationRows) {
+        await transaction.run(`
+          INSERT INTO owner_notifications (user_id, order_id, title, message)
+          VALUES (?, ?, ?, ?)
+        `, notification);
+      }
+    });
+    if (isCourierDispatch) dispatchNotification = await telegram.notifyOwner(dispatchMessage);
 
     // Telegramga yuborish
     const tgResultObj = await telegram.formatOrderMessage(orderId, 'status_change');
@@ -884,7 +1098,15 @@ app.patch('/api/orders/:id/status', async (req, res) => {
       tgResult = await telegram.sendTelegramMessage(tgResultObj.text, 'HTML', tgResultObj.location);
     }
 
-    res.json({ success: true, message: "Holat muvaffaqiyatli yangilandi", telegram: tgResult });
+    const notificationFailures = dispatchNotification?.results?.filter(result => !result.success) || [];
+    res.json({
+      success: true,
+      message: "Holat muvaffaqiyatli yangilandi",
+      telegram: tgResult,
+      notification_warning: notificationFailures.length
+        ? 'Buyurtma holati saqlandi, lekin egaga Telegram xabari to‘liq yetkazilmadi'
+        : null
+    });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
   }
@@ -979,7 +1201,7 @@ app.post('/api/orders/:id/handoff', async (req, res) => {
     const currentCourierId = assignment === 'pickup' ? order.courier_pickup_id : order.courier_delivery_id;
     const allowedStatuses = assignment === 'pickup'
       ? ['yangi', 'qabul_qilindi']
-      : ['qabul_qilindi', 'yuvishda', 'quritishda', 'tayyor', 'yetkazilmoqda'];
+      : ['qabul_qilindi', 'yuvishda', 'quritishda', 'qadoqlayapti', 'tayyor', 'yetkazilmoqda'];
     if (currentCourierId !== req.user.id || !allowedStatuses.includes(order.status)) {
       return res.status(403).json({ success: false, error: 'Bu bosqichdagi buyurtmani topshirish huquqingiz yo‘q' });
     }
@@ -1131,7 +1353,7 @@ app.post('/api/users', async (req, res) => {
     if (typeof username !== 'string' || !/^[a-zA-Z0-9_.-]{3,40}$/.test(username) ||
         typeof password !== 'string' || password.length < 8 || password.length > 256 ||
         typeof full_name !== 'string' || !full_name.trim() ||
-        !['admin', 'courier'].includes(role || 'courier')) {
+        !['admin', 'courier', 'washer'].includes(role || 'courier')) {
       return res.status(400).json({ success: false, error: 'Login (3+ belgi), ism, rol va kamida 8 belgili parol talab qilinadi' });
     }
     const insert = await db.run(`
