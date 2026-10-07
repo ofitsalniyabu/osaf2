@@ -461,7 +461,15 @@ app.post('/api/washer/orders/:id/status', async (req, res) => {
     if (status !== nextStatus) {
       return res.status(400).json({ success: false, error: 'Buyurtmani keyingi yuvish bosqichiga o‘tkazing' });
     }
-    await db.run('UPDATE orders SET status = ? WHERE id = ?', [status, order.id]);
+    await db.run(`
+      UPDATE orders
+      SET status = ?,
+          courier_delivery_id = CASE
+            WHEN ? = 'qadoqlayapti' THEN COALESCE(courier_delivery_id, courier_pickup_id)
+            ELSE courier_delivery_id
+          END
+      WHERE id = ?
+    `, [status, status, order.id]);
     res.json({ success: true, status });
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });
@@ -490,9 +498,8 @@ app.post('/api/washer/orders/:id/measurements', async (req, res) => {
       WHERE oi.order_id = ?
       ORDER BY oi.id
     `, [order.id]);
-    const carpetItems = items.filter(item => item.unit === 'kv_m');
-    if (measurements.length !== carpetItems.length) {
-      return res.status(400).json({ success: false, error: 'Har bir gilam uchun uzunlik va enni kiriting' });
+    if (measurements.length !== items.length) {
+      return res.status(400).json({ success: false, error: 'Har bir buyum uchun o‘lcham va narxni yuboring' });
     }
 
     const byId = new Map();
@@ -500,14 +507,18 @@ app.post('/api/washer/orders/:id/measurements', async (req, res) => {
       const id = Number(measurement && measurement.id);
       const length = Number(measurement && measurement.length);
       const width = Number(measurement && measurement.width);
+      const unitPrice = Number(measurement && measurement.unit_price);
       if (!Number.isInteger(id) || !Number.isFinite(length) || !Number.isFinite(width) ||
-          length <= 0 || width <= 0 || length > 100 || width > 100 || byId.has(id)) {
-        return res.status(400).json({ success: false, error: 'Gilam o‘lchami 0 dan katta va 100 metrdan oshmasligi kerak' });
+          !Number.isFinite(unitPrice) || unitPrice < 0 || unitPrice > 1000000000 ||
+          length < 0 || width < 0 || length > 100 || width > 100 || byId.has(id)) {
+        return res.status(400).json({ success: false, error: 'O‘lcham yoki narx noto‘g‘ri; narx manfiy, o‘lcham 100 metrdan katta bo‘lmasin' });
       }
-      byId.set(id, { length, width });
+      byId.set(id, { length, width, unit_price: unitPrice });
     }
-    if (carpetItems.some(item => !byId.has(item.id))) {
-      return res.status(400).json({ success: false, error: 'Faqat shu buyurtmadagi barcha gilamlar o‘lchamini yuboring' });
+    if (items.some(item => !byId.has(item.id) ||
+        (item.unit === 'kv_m' && (byId.get(item.id).length <= 0 || byId.get(item.id).width <= 0)) ||
+        (item.unit !== 'kv_m' && (byId.get(item.id).length !== 0 || byId.get(item.id).width !== 0)))) {
+      return res.status(400).json({ success: false, error: 'Gilamlarning uzunligi/enini va har bir buyum narxini kiriting' });
     }
 
     let totalArea = 0;
@@ -516,22 +527,27 @@ app.post('/api/washer/orders/:id/measurements', async (req, res) => {
       for (const item of items) {
         const measurement = byId.get(item.id);
         const area = measurement
-          ? Math.round(measurement.length * measurement.width * Number(item.quantity || 1) * 100) / 100
+          ? item.unit === 'kv_m'
+            ? Math.round(measurement.length * measurement.width * Number(item.quantity || 1) * 100) / 100
+            : 0
           : Number(item.area || 0);
         const subtotal = measurement
-          ? Math.round(Number(item.unit_price) * area)
+          ? Math.round(measurement.unit_price * (item.unit === 'kv_m' ? area : Number(item.quantity || 1)))
           : Number(item.subtotal);
         if (!Number.isFinite(area) || !Number.isSafeInteger(subtotal) || subtotal < 0) {
           throw new Error('O‘lcham bo‘yicha summa juda katta');
         }
         if (measurement) {
           await transaction.run(`
-            UPDATE order_items SET length = ?, width = ?, area = ?, subtotal = ?
+            UPDATE order_items SET length = ?, width = ?, area = ?, unit_price = ?, subtotal = ?
             WHERE id = ? AND order_id = ?
-          `, [measurement.length, measurement.width, area, subtotal, item.id, order.id]);
+          `, [measurement.length, measurement.width, area, measurement.unit_price, subtotal, item.id, order.id]);
         }
         if (item.unit === 'kv_m') totalArea += area;
         totalAmount += subtotal;
+        if (!Number.isFinite(totalArea) || !Number.isSafeInteger(totalAmount)) {
+          throw new Error('Buyurtma o‘lchami yoki umumiy narxi juda katta');
+        }
       }
       totalArea = Math.round(totalArea * 100) / 100;
       totalAmount = Math.round(totalAmount * 100) / 100;
@@ -546,9 +562,7 @@ app.post('/api/washer/orders/:id/measurements', async (req, res) => {
           : 'kutilmoqda';
       await transaction.run(`
         UPDATE orders
-        SET total_area = ?, total_amount = ?, final_amount = ?, payment_status = ?,
-            courier_delivery_id = COALESCE(courier_delivery_id, courier_pickup_id),
-            status = 'tayyor'
+        SET total_area = ?, total_amount = ?, final_amount = ?, payment_status = ?
         WHERE id = ?
       `, [totalArea, totalAmount, finalAmount, paymentStatus, order.id]);
     });
@@ -558,7 +572,7 @@ app.post('/api/washer/orders/:id/measurements', async (req, res) => {
     );
     res.json({
       success: true,
-      status: 'tayyor',
+      status: 'qadoqlayapti',
       courier_delivery_id: readyOrder.courier_delivery_id,
       total_area: totalArea,
       total_amount: totalAmount
@@ -566,7 +580,8 @@ app.post('/api/washer/orders/:id/measurements', async (req, res) => {
   } catch (error) {
     const isMeasurementError = [
       'Yangi o‘lcham bo‘yicha jami summa oldindan to‘langan summadan kam',
-      'O‘lcham bo‘yicha summa juda katta'
+      'O‘lcham bo‘yicha summa juda katta',
+      'Buyurtma o‘lchami yoki umumiy narxi juda katta'
     ].includes(error.message);
     res.status(isMeasurementError ? 400 : 500).json({ success: false, error: error.message });
   }
@@ -831,15 +846,19 @@ app.post('/api/orders', async (req, res) => {
       if (!item || typeof item !== 'object') {
         return res.status(400).json({ success: false, error: 'Buyum ma’lumoti noto‘g‘ri' });
       }
-      const len = Number(item.length || 0);
-      const wid = Number(item.width || 0);
       const qty = item.quantity === undefined || item.quantity === null || item.quantity === ''
         ? 1
         : Number(item.quantity);
       const categoryId = Number(item.category_id);
       const category = Number.isInteger(categoryId)
-        ? await db.get('SELECT id, name, price_per_unit FROM categories WHERE id = ?', [categoryId])
+        ? await db.get('SELECT id, name, unit, price_per_unit FROM categories WHERE id = ?', [categoryId])
         : null;
+      const len = req.user.role === 'courier' || !category || category.unit !== 'kv_m'
+        ? 0
+        : Number(item.length || 0);
+      const wid = req.user.role === 'courier' || !category || category.unit !== 'kv_m'
+        ? 0
+        : Number(item.width || 0);
       if (!category || !Number.isFinite(len) || !Number.isFinite(wid) ||
           len < 0 || len > 100 || wid < 0 || wid > 100 ||
           !Number.isInteger(qty) || qty < 1 || qty > 100 ||
@@ -857,7 +876,9 @@ app.post('/api/orders', async (req, res) => {
         subtotal = Math.round(area * price);
         totalArea += area;
       } else {
-        subtotal = Math.round(qty * price);
+        subtotal = req.user.role === 'courier' && category.unit === 'kv_m'
+          ? 0
+          : Math.round(qty * price);
       }
       if (!Number.isFinite(area) || !Number.isSafeInteger(subtotal)) {
         return res.status(400).json({ success: false, error: 'Buyum o‘lchami yoki narxi juda katta' });
@@ -1016,10 +1037,19 @@ app.patch('/api/orders/:id/status', async (req, res) => {
         order.status === 'yangi' &&
         status === 'qabul_qilindi' &&
         paid_amount === undefined;
+      const deliveryMeasurementsReady = order.status !== 'qadoqlayapti' || !await db.get(`
+        SELECT oi.id
+        FROM order_items oi
+        JOIN categories c ON c.id = oi.category_id
+        WHERE oi.order_id = ? AND c.unit = 'kv_m'
+          AND (oi.length <= 0 OR oi.width <= 0 OR oi.area <= 0)
+        LIMIT 1
+      `, [orderId]);
       const canUpdateDelivery =
         order.courier_delivery_id === req.user.id &&
         ['yetkazilmoqda', 'yetkazildi'].includes(status) &&
-        (status !== 'yetkazilmoqda' || order.status === 'tayyor') &&
+        (status !== 'yetkazilmoqda' ||
+          ['tayyor', 'qadoqlayapti'].includes(order.status) && deliveryMeasurementsReady) &&
         (status !== 'yetkazildi' || order.status === 'yetkazilmoqda');
       if (!canConfirmPickup && !canUpdateDelivery) {
         return res.status(403).json({
@@ -1067,7 +1097,7 @@ app.patch('/api/orders/:id/status', async (req, res) => {
     let dispatchMessage = '';
     let ownerNotificationRows = [];
     const isCourierDispatch = req.user.role === 'courier' &&
-      order.status === 'tayyor' && status === 'yetkazilmoqda';
+      ['tayyor', 'qadoqlayapti'].includes(order.status) && status === 'yetkazilmoqda';
     if (isCourierDispatch) {
       const [owners, items] = await Promise.all([
         db.all("SELECT id FROM users WHERE role = 'owner' AND status = 'active'"),

@@ -18,7 +18,7 @@ Mazkur tizim professional gilam yuvish korxonalari uchun maxsus ishlab chiqilgan
   - Gilam o'lchamlarini (uzunligi, eni, m² hisobi) va adyol/gilamchalarni donalab kiritish.
   - Buyurtmalarni kuryerlarga biriktirish va buyurtma holatini nazorat qilish.
 - **🚚 Dastavchik (Kuryer):**
-  - Mijozdan olgan gilam, to'shak va boshqa buyumlar uchun yangi buyurtmani o'zi kiritish.
+  - Mijozdan olgan gilam, to'shak va boshqa buyumlarni yangi buyurtmaga kiritish; gilam o'lchami va xizmat narxini belgilamaslik.
   - Olingan buyurtmani sexga topshirganini tasdiqlash.
   - O'ziga biriktirilgan tayyor buyurtmalarni yetkazish ro'yxatida ko'rish.
   - Mijoz telefoniga 1 tugma bilan qo'ng'iroq qilish, manzil va mo'ljalni ko'rish.
@@ -26,8 +26,8 @@ Mazkur tizim professional gilam yuvish korxonalari uchun maxsus ishlab chiqilgan
   - O'ziga biriktirilgan olib ketish yoki yetkazish vazifasini izoh bilan boshqa faol kuryerga topshirish; topshirishlar buyurtma tarixida qayd etiladi.
 - **🧼 Yuvuvchi:**
   - Sexga topshirilgan buyurtmalarni alohida ish maydonida yuvish, quritish va qadoqlash bosqichlaridan o'tkazish.
-  - Qadoqlashda gilamlarning haqiqiy uzunligi va enini belgilash; m² va buyurtma summasi avtomatik qayta hisoblanadi.
-  - O'lchamlarni saqlash buyurtmani dastavchikning yetkazishga tayyor ro'yxatiga o'tkazadi. Yuvuvchi yetkazish, to'lov, xodimlar va moliya bo'limlariga kira olmaydi.
+  - Qadoqlashda gilamlarning haqiqiy uzunligi/enini va barcha buyumlarning haqiqiy xizmat narxini belgilash; m² va buyurtma summasi avtomatik qayta hisoblanadi.
+  - Qadoqlash bosqichi boshlanishi bilan buyurtma dastavchikda ko'rinadi. O'lcham va narxni yuvuvchi saqlamaguncha dastavchik yetkazishga chiqa olmaydi; yuvuvchi yetkazish, to'lov, xodimlar va moliya bo'limlariga kira olmaydi.
 
 ---
 

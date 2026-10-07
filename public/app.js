@@ -311,7 +311,7 @@ async function initializeAuthenticatedApp() {
   authenticatedDataLoaded = true;
 
   if (currentUser.role !== 'washer') await loadCategories();
-  if (['owner', 'admin'].includes(currentUser.role)) {
+  if (['owner', 'admin', 'courier'].includes(currentUser.role)) {
     await loadStaff();
     await loadDashboardStats();
   } else if (currentUser.role === 'courier') {
@@ -327,7 +327,7 @@ async function initializeAuthenticatedApp() {
   }
   if (currentUser.role === 'owner') await loadTgSettings();
 
-  if (['owner', 'admin'].includes(currentUser.role)) {
+  if (['owner', 'admin', 'courier'].includes(currentUser.role)) {
     addNewItemRow();
     addNewItemRow();
     runQuickCalc();
@@ -339,7 +339,7 @@ async function initializeAuthenticatedApp() {
     if (currentUser.role === 'washer') loadWasherOrders();
     else loadOrders();
     if (currentUser.role === 'owner') loadOwnerNotifications();
-  }, 30000);
+  }, currentUser.role === 'courier' ? 5000 : 30000);
 }
 
 async function handleLogin(e) {
@@ -444,6 +444,13 @@ function applyUserSession() {
   document.querySelectorAll('.nav-washer').forEach(el => el.style.display = currentUser.role === 'washer' ? 'flex' : 'none');
   const notificationPanel = document.getElementById('ownerNotificationsPanel');
   if (notificationPanel) notificationPanel.style.display = currentUser.role === 'owner' ? 'block' : 'none';
+  document.getElementById('orderItemsTable').classList.toggle('courier-intake', currentUser.role === 'courier');
+  const orderItemsHeading = document.getElementById('orderItemsHeading');
+  if (orderItemsHeading) {
+    orderItemsHeading.innerHTML = currentUser.role === 'courier'
+      ? '<i class="fa-solid fa-box"></i> Olib ketiladigan buyumlar'
+      : '<i class="fa-solid fa-calculator"></i> Gilam o‘lchamlari va kalkulyator';
+  }
 
   if (currentUser.role === 'courier') {
     ownerElements.forEach(el => el.style.display = 'none');
@@ -828,7 +835,7 @@ function addNewItemRow() {
     <td style="width: 100px;">
       <span class="item-calc-metric" style="font-weight: 600;">6.00 m²</span>
     </td>
-    <td style="width: 110px;">
+    <td class="item-price-cell" style="width: 110px;">
       <input type="number" class="item-price" step="500" value="15000" readonly aria-label="Katalogdagi xizmat narxi">
     </td>
     <td style="width: 110px;">
@@ -868,12 +875,20 @@ function onItemCategoryChange(rowId) {
   const lenInput = row.querySelector('.item-len');
   const widInput = row.querySelector('.item-wid');
   const priceInput = row.querySelector('.item-price');
+  const isCourier = currentUser?.role === 'courier';
 
   if (defaultPrice) priceInput.value = defaultPrice;
 
+  lenInput.required = unit === 'kv_m' && !isCourier;
+  widInput.required = unit === 'kv_m' && !isCourier;
+  lenInput.disabled = isCourier || unit === 'dona';
+  widInput.disabled = isCourier || unit === 'dona';
+  row.querySelector('.item-price-cell').hidden = isCourier;
   if (unit === 'dona') {
-    lenInput.disabled = true;
-    widInput.disabled = true;
+    lenInput.value = '';
+    widInput.value = '';
+    row.querySelectorAll('.item-dimension-cell').forEach(cell => { cell.hidden = true; });
+  } else if (isCourier) {
     lenInput.value = '';
     widInput.value = '';
     row.querySelectorAll('.item-dimension-cell').forEach(cell => { cell.hidden = true; });
@@ -900,6 +915,13 @@ function calculateRow(rowId) {
   const metricSpan = row.querySelector('.item-calc-metric');
   const subtotalEl = row.querySelector('.item-subtotal');
 
+  if (currentUser?.role === 'courier') {
+    metricSpan.innerText = unit === 'kv_m' ? 'Yuvuvchi o‘lchaydi' : '1 dona';
+    subtotalEl.innerText = unit === 'kv_m' ? 'Yuvilgach hisoblanadi' : `${Math.round(price).toLocaleString()} so‘m`;
+    recalculateTotals();
+    return;
+  }
+
   let subtotal = 0;
   if (unit === 'kv_m') {
     const area = len * wid;
@@ -925,8 +947,8 @@ function recalculateTotals() {
     const selectedOption = select ? select.options[select.selectedIndex] : null;
     const unit = selectedOption ? selectedOption.getAttribute('data-unit') : 'kv_m';
 
-    const len = parseFloat(r.querySelector('.item-len').value) || 0;
-    const wid = parseFloat(r.querySelector('.item-wid').value) || 0;
+    const len = currentUser.role === 'courier' ? 0 : parseFloat(r.querySelector('.item-len').value) || 0;
+    const wid = currentUser.role === 'courier' ? 0 : parseFloat(r.querySelector('.item-wid').value) || 0;
     const price = parseFloat(r.querySelector('.item-price').value) || 0;
 
     sumItems += 1;
@@ -1078,7 +1100,7 @@ async function loadOrders() {
       renderOrdersTable(globalOrders);
       renderDashboardRecentTable(globalOrders.slice(0, 5));
       renderCourierDeliveries();
-      loadReceiptsList();
+      if (currentUser.role !== 'courier') loadReceiptsList();
     }
   } catch (err) {
     console.error("Orders error:", err);
@@ -1117,27 +1139,34 @@ function renderWasherOrders() {
   };
   container.innerHTML = globalWasherOrders.map(order => {
     const stage = stages[order.status];
-    const carpets = order.items.filter(item => item.unit === 'kv_m');
     const itemsHtml = order.items.map(item => {
+        const editable = order.status === 'qadoqlayapti';
       if (item.unit === 'kv_m') {
         return `<div class="washer-measurement-row">
           <strong>${escapeHtml(item.item_type)}</strong>
           <label>Uzunligi (m)
-            <input type="number" min="0.01" max="100" step="0.01" id="washer-length-${Number(item.id)}" value="${Number(item.length) || ''}" ${order.status === 'qadoqlayapti' ? '' : 'disabled'}>
+              <input type="number" min="0.01" max="100" step="0.01" id="washer-length-${Number(item.id)}" value="${Number(item.length) || ''}" ${editable ? '' : 'disabled'} oninput="previewWasherOrderTotal(${Number(order.id)})">
           </label>
           <label>Eni (m)
-            <input type="number" min="0.01" max="100" step="0.01" id="washer-width-${Number(item.id)}" value="${Number(item.width) || ''}" ${order.status === 'qadoqlayapti' ? '' : 'disabled'}>
+              <input type="number" min="0.01" max="100" step="0.01" id="washer-width-${Number(item.id)}" value="${Number(item.width) || ''}" ${editable ? '' : 'disabled'} oninput="previewWasherOrderTotal(${Number(order.id)})">
+          </label>
+            <label>Narx / m²
+              <input type="number" min="0" max="1000000000" step="500" id="washer-price-${Number(item.id)}" value="${Number(item.unit_price)}" ${editable ? '' : 'disabled'} oninput="previewWasherOrderTotal(${Number(order.id)})">
+            </label>
+            <span>${Number(item.quantity)} dona${item.notes ? ` · ${escapeHtml(item.notes)}` : ''}</span>
+          </div>`;
+        }
+        return `<div class="washer-measurement-row">
+          <strong>${escapeHtml(item.item_type)}</strong>
+          <label>Narx / dona
+            <input type="number" min="0" max="1000000000" step="500" id="washer-price-${Number(item.id)}" value="${Number(item.unit_price)}" ${editable ? '' : 'disabled'} oninput="previewWasherOrderTotal(${Number(order.id)})">
           </label>
           <span>${Number(item.quantity)} dona${item.notes ? ` · ${escapeHtml(item.notes)}` : ''}</span>
         </div>`;
-      }
-      return `<div class="washer-measurement-row">
-        <strong>${escapeHtml(item.item_type)}</strong><span>${Number(item.quantity)} dona${item.notes ? ` · ${escapeHtml(item.notes)}` : ''}</span>
-      </div>`;
     }).join('');
     const action = stage.next
       ? `<button class="btn btn-primary" onclick="advanceWasherOrder(${Number(order.id)}, '${stage.next}')"><i class="fa-solid ${stage.icon}"></i> ${stage.nextLabel}</button>`
-      : `<button class="btn btn-success" onclick="saveWasherMeasurements(${Number(order.id)})"><i class="fa-solid fa-floppy-disk"></i> O‘lchamlarni saqlash va yetkazishga tayyorlash</button>`;
+      : `<button class="btn btn-success" onclick="saveWasherMeasurements(${Number(order.id)})"><i class="fa-solid fa-floppy-disk"></i> O‘lcham va narxlarni saqlash</button>`;
     return `<article class="card washer-order-card">
       <div class="card-header">
         <h3>${escapeHtml(order.order_number)}</h3>
@@ -1145,11 +1174,13 @@ function renderWasherOrders() {
       </div>
       <div class="card-body">
         <div class="washer-items-list">${itemsHtml || '<p class="hint">Buyumlar topilmadi</p>'}</div>
-        ${order.status === 'qadoqlayapti' ? '<p class="hint">Gilamlarning haqiqiy uzunligi va enini kiriting. Saqlanganda jami m² hisoblanib, buyurtma dastavchikning yetkazish ro‘yxatiga o‘tadi.</p>' : ''}
+        ${order.status === 'qadoqlayapti' ? '<p class="hint">Haqiqiy o‘lcham va narxni faqat yuvuvchi kiritadi. Bu bosqichda buyurtma dastavchik ro‘yxatida ko‘rinadi; narxlar saqlanmaguncha yetkazishga chiqib bo‘lmaydi.</p><strong id="washer-total-preview-' + Number(order.id) + '">Jami: hisoblanmoqda</strong>' : ''}
         <div class="washer-order-actions">${action}</div>
       </div>
     </article>`;
   }).join('');
+  globalWasherOrders.filter(order => order.status === 'qadoqlayapti')
+    .forEach(order => previewWasherOrderTotal(order.id));
 }
 
 async function advanceWasherOrder(orderId, status) {
@@ -1171,14 +1202,17 @@ async function advanceWasherOrder(orderId, status) {
 async function saveWasherMeasurements(orderId) {
   const order = globalWasherOrders.find(item => Number(item.id) === Number(orderId));
   if (!order) return;
-  const measurements = order.items.filter(item => item.unit === 'kv_m').map(item => ({
+  const measurements = order.items.map(item => ({
     id: Number(item.id),
-    length: Number(document.getElementById(`washer-length-${Number(item.id)}`).value),
-    width: Number(document.getElementById(`washer-width-${Number(item.id)}`).value)
+    length: item.unit === 'kv_m' ? Number(document.getElementById(`washer-length-${Number(item.id)}`).value) : 0,
+    width: item.unit === 'kv_m' ? Number(document.getElementById(`washer-width-${Number(item.id)}`).value) : 0,
+    unit_price: Number(document.getElementById(`washer-price-${Number(item.id)}`).value)
   }));
   if (measurements.some(item => !Number.isFinite(item.length) || !Number.isFinite(item.width) ||
-      item.length <= 0 || item.width <= 0)) {
-    alert('Har bir gilamning uzunligi va enini 0 dan katta qilib kiriting.');
+      !Number.isFinite(item.unit_price) || item.unit_price < 0 ||
+      (item.length === 0) !== (item.width === 0) ||
+      order.items.find(source => Number(source.id) === item.id)?.unit === 'kv_m' && (item.length <= 0 || item.width <= 0))) {
+    alert('Har bir gilamning uzunligi/enini va barcha buyumlar narxini tekshiring.');
     return;
   }
   try {
@@ -1189,10 +1223,31 @@ async function saveWasherMeasurements(orderId) {
     });
     const result = await response.json();
     if (!response.ok || !result.success) throw new Error(result.error || 'O‘lchamlarni saqlab bo‘lmadi');
-    showToast(`O‘lchamlar saqlandi: ${Number(result.total_area).toFixed(2)} m². Buyurtma yetkazishga tayyor.`);
+    showToast(`O‘lcham va narxlar saqlandi: ${Number(result.total_area).toFixed(2)} m², ${Number(result.total_amount).toLocaleString()} so‘m.`);
     await loadWasherOrders();
   } catch (error) {
     alert(error.message);
+  }
+
+  function previewWasherOrderTotal(orderId) {
+    const order = globalWasherOrders.find(item => Number(item.id) === Number(orderId));
+    const preview = document.getElementById(`washer-total-preview-${Number(orderId)}`);
+    if (!order || !preview) return;
+    let areaTotal = 0;
+    let amountTotal = 0;
+    for (const item of order.items) {
+      const unitPrice = Number(document.getElementById(`washer-price-${Number(item.id)}`).value) || 0;
+      if (item.unit === 'kv_m') {
+        const length = Number(document.getElementById(`washer-length-${Number(item.id)}`).value) || 0;
+        const width = Number(document.getElementById(`washer-width-${Number(item.id)}`).value) || 0;
+        const area = Math.round(length * width * Number(item.quantity || 1) * 100) / 100;
+        areaTotal += area;
+        amountTotal += Math.round(unitPrice * area);
+      } else {
+        amountTotal += Math.round(unitPrice * Number(item.quantity || 1));
+      }
+    }
+    preview.textContent = `Jami: ${areaTotal.toFixed(2)} m² · ${Math.round(amountTotal).toLocaleString()} so‘m`;
   }
 }
 
@@ -1393,9 +1448,9 @@ function renderCourierDeliveries() {
       .filter(order => !['yetkazildi', 'bekor_qilindi'].includes(order.status))
       .sort((left, right) => {
         const leftDeliveryReady = Number(left.courier_delivery_id) === Number(currentUser.id) &&
-          ['tayyor', 'yetkazilmoqda'].includes(left.status);
+          ['qadoqlayapti', 'tayyor', 'yetkazilmoqda'].includes(left.status);
         const rightDeliveryReady = Number(right.courier_delivery_id) === Number(currentUser.id) &&
-          ['tayyor', 'yetkazilmoqda'].includes(right.status);
+          ['qadoqlayapti', 'tayyor', 'yetkazilmoqda'].includes(right.status);
         return Number(rightDeliveryReady) - Number(leftDeliveryReady) || right.id - left.id;
       })
     : matchingOrders;
@@ -1411,7 +1466,7 @@ function renderCourierDeliveries() {
   container.innerHTML = orders.map(ord => {
     let borderClass = 'border-left-delivering';
     if (ord.status === 'yuvishda' || ord.status === 'quritishda') borderClass = 'border-left-washing';
-    if (ord.status === 'tayyor') borderClass = 'border-left-ready';
+    if (['qadoqlayapti', 'tayyor'].includes(ord.status)) borderClass = 'border-left-ready';
     const canManageDelivery = currentUser.role !== 'courier' ||
       Number(ord.courier_delivery_id) === Number(currentUser.id);
     let deliveryAction = '';
@@ -1424,6 +1479,12 @@ function renderCourierDeliveries() {
         </button>
       `;
     } else if (canManageDelivery && ord.status === 'tayyor') {
+      deliveryAction = `
+        <button class="btn btn-primary" style="flex: 1.2;" onclick="viewOrderDetails(${Number(ord.id)})">
+          <i class="fa-solid fa-truck"></i> Yetkazib berish
+        </button>
+      `;
+    } else if (canManageDelivery && ord.status === 'qadoqlayapti') {
       deliveryAction = `
         <button class="btn btn-primary" style="flex: 1.2;" onclick="viewOrderDetails(${Number(ord.id)})">
           <i class="fa-solid fa-truck"></i> Yetkazib berish
@@ -1801,7 +1862,7 @@ async function viewOrderDetails(orderId) {
 
     const courierDeliveryActions = currentUser?.role === 'courier' &&
       Number(ord.courier_delivery_id) === Number(currentUser.id)
-      ? ord.status === 'tayyor'
+      ? ['tayyor', 'qadoqlayapti'].includes(ord.status)
         ? `<button class="btn btn-primary" onclick="updateDeliveryFromDetails(${Number(ord.id)}, 'yetkazilmoqda')"><i class="fa-solid fa-truck"></i> Yetkazishga chiqish</button>`
         : ord.status === 'yetkazilmoqda'
           ? `<button class="btn btn-success" onclick="updateDeliveryFromDetails(${Number(ord.id)}, 'yetkazildi', ${Number(ord.final_amount)})"><i class="fa-solid fa-check"></i> Yetkazildi va to‘lov olindi</button>`

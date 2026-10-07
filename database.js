@@ -342,6 +342,13 @@ async function initDb() {
   }
 
   const checkUsers = await db.get('SELECT count(*) as count FROM users');
+  await db.run(`
+    UPDATE orders
+    SET courier_delivery_id = courier_pickup_id
+    WHERE status = 'qadoqlayapti'
+      AND courier_delivery_id IS NULL
+      AND courier_pickup_id IS NOT NULL
+  `);
   const maxOrderNumber = await db.get(
     "SELECT MAX(CAST(REPLACE(order_number, '#GLM-', '') AS INTEGER)) AS max_order_number FROM orders WHERE order_number LIKE '#GLM-%'"
   );

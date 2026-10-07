@@ -507,7 +507,8 @@ test('couriers can register collected items and confirm delivery to the wash sho
   assert.equal(order.courier_pickup_id, courierId);
   assert.equal(order.courier_delivery_id, null);
   assert.equal(order.status, 'yangi');
-  assert.equal(order.final_amount, 180000);
+  assert.equal(order.final_amount, 0);
+  assert.equal(order.total_area, 0);
   assert.equal(order.paid_amount, 0);
   assert.equal(order.admin_notes, '');
 
@@ -564,6 +565,26 @@ test('couriers can register collected items and confirm delivery to the wash sho
     });
     assert.equal(advanced.status, 200);
   }
+  const deliveryCourier = await login('kuryer2', credentials.courier2);
+  const deliveryCourierSession = deliveryCourier.cookie.split(';')[0];
+  const packagingOrders = await request('/api/orders', { cookie: deliveryCourierSession });
+  assert.ok((await packagingOrders.json()).data.some(order =>
+    order.id === orderId && order.status === 'qadoqlayapti'
+  ));
+  const courierCannotChangeWasherPricing = await request(`/api/washer/orders/${orderId}/measurements`, {
+    cookie: deliveryCourierSession,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ measurements: [] })
+  });
+  assert.equal(courierCannotChangeWasherPricing.status, 403);
+  const dispatchBeforeMeasurement = await request(`/api/orders/${orderId}/status`, {
+    cookie: deliveryCourierSession,
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ status: 'yetkazilmoqda' })
+  });
+  assert.equal(dispatchBeforeMeasurement.status, 403);
   const itemId = order.items[0].id;
   const invalidMeasure = await request(`/api/washer/orders/${orderId}/measurements`, {
     cookie: washerCookie,
@@ -576,21 +597,20 @@ test('couriers can register collected items and confirm delivery to the wash sho
     cookie: washerCookie,
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ measurements: [{ id: itemId, length: 3, width: 4 }] })
+    body: JSON.stringify({ measurements: [{ id: itemId, length: 3, width: 4, unit_price: 20000 }] })
   });
   assert.equal(measured.status, 200);
-  assert.equal((await measured.json()).status, 'tayyor');
+  assert.equal((await measured.json()).status, 'qadoqlayapti');
   const readyOrder = (await (await request(`/api/orders/${orderId}`, { cookie: ownerCookie })).json()).data;
-  assert.equal(readyOrder.status, 'tayyor');
+  assert.equal(readyOrder.status, 'qadoqlayapti');
   assert.equal(readyOrder.total_area, 24);
-  assert.equal(readyOrder.items[0].subtotal, 360000);
+  assert.equal(readyOrder.items[0].unit_price, 20000);
+  assert.equal(readyOrder.items[0].subtotal, 480000);
   assert.equal(readyOrder.payment_status, 'kutilmoqda');
   assert.equal(readyOrder.courier_delivery_id, 4);
-  const deliveryCourier = await login('kuryer2', credentials.courier2);
-  const deliveryCourierSession = deliveryCourier.cookie.split(';')[0];
   const readyForCourier = await request('/api/orders', { cookie: deliveryCourierSession });
   assert.ok((await readyForCourier.json()).data.some(order =>
-    order.id === orderId && order.status === 'tayyor'
+    order.id === orderId && order.status === 'qadoqlayapti'
   ));
 
   const startedDelivery = await request(`/api/orders/${orderId}/status`, {

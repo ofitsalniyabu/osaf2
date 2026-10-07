@@ -365,7 +365,7 @@
             <form id="newOrderForm" onsubmit="submitNewOrder(event)">
               <div class="grid-layout">
                 <!-- Chap: Mijoz, Manzil va Avto Lokatsiya -->
-                <div class="card">
+                <div class="card" id="orderItemsCard">
                   <div class="card-header">
                     <h3><i class="fa-solid fa-address-book"></i> Mijoz va Avto-Lokatsiya</h3>
                   </div>
@@ -475,7 +475,7 @@
                 <!-- O'ng: Tezkor O'lcham Kalkulyatori & Belgilash orqali hisoblash -->
                 <div class="card">
                   <div class="card-header">
-                    <h3><i class="fa-solid fa-calculator"></i> Gilam O'lchamlari va Kalkulyator</h3>
+                    <h3 id="orderItemsHeading"><i class="fa-solid fa-calculator"></i> Gilam O'lchamlari va Kalkulyator</h3>
                     <button type="button" class="btn btn-sm btn-outline-primary" onclick="addNewItemRow()">
                       <i class="fa-solid fa-plus"></i> Buyum qo'shish
                     </button>
@@ -497,10 +497,10 @@
                         <thead>
                           <tr>
                             <th>Turi / Kategoriya</th>
-                            <th>Uzunlik (m)</th>
-                            <th>Eni (m)</th>
+                            <th class="item-dimension-heading">Uzunlik (m)</th>
+                            <th class="item-dimension-heading">Eni (m)</th>
                             <th>Maydon (m²) / Soni</th>
-                            <th>Admin Narxi</th>
+                            <th class="item-price-heading">Admin Narxi</th>
                             <th>Jami Summa</th>
                             <th>Izoh / Belgi</th>
                             <th></th>

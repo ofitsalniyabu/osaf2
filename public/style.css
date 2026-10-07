@@ -972,6 +972,11 @@ body {
 .status-yetkazildi { background: rgba(16, 185, 129, 0.2); color: #10b981; border: 1px solid #10b981; }
 .status-bekor_qilindi { background: rgba(239, 68, 68, 0.2); color: #f87171; border: 1px solid #ef4444; }
 
+.courier-intake .item-dimension-heading,
+.courier-intake .item-price-heading,
+.courier-intake col.item-col-dimension,
+.courier-intake col.item-col-price { display: none; }
+.courier-intake .item-price-cell { display: none; }
 .washer-order-card .card-body { display: flex; flex-direction: column; gap: 14px; }
 .washer-items-list { display: flex; flex-direction: column; gap: 10px; }
 .washer-measurement-row {
