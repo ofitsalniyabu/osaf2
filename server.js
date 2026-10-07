@@ -546,11 +546,23 @@ app.post('/api/washer/orders/:id/measurements', async (req, res) => {
           : 'kutilmoqda';
       await transaction.run(`
         UPDATE orders
-        SET total_area = ?, total_amount = ?, final_amount = ?, payment_status = ?, status = 'tayyor'
+        SET total_area = ?, total_amount = ?, final_amount = ?, payment_status = ?,
+            courier_delivery_id = COALESCE(courier_delivery_id, courier_pickup_id),
+            status = 'tayyor'
         WHERE id = ?
       `, [totalArea, totalAmount, finalAmount, paymentStatus, order.id]);
     });
-    res.json({ success: true, status: 'tayyor', total_area: totalArea, total_amount: totalAmount });
+    const readyOrder = await db.get(
+      'SELECT courier_delivery_id FROM orders WHERE id = ?',
+      [order.id]
+    );
+    res.json({
+      success: true,
+      status: 'tayyor',
+      courier_delivery_id: readyOrder.courier_delivery_id,
+      total_area: totalArea,
+      total_amount: totalAmount
+    });
   } catch (error) {
     const isMeasurementError = [
       'Yangi o‘lcham bo‘yicha jami summa oldindan to‘langan summadan kam',

@@ -1392,9 +1392,9 @@ function renderCourierDeliveries() {
     ? matchingOrders
       .filter(order => !['yetkazildi', 'bekor_qilindi'].includes(order.status))
       .sort((left, right) => {
-        const leftDeliveryReady = left.courier_delivery_id === currentUser.id &&
+        const leftDeliveryReady = Number(left.courier_delivery_id) === Number(currentUser.id) &&
           ['tayyor', 'yetkazilmoqda'].includes(left.status);
-        const rightDeliveryReady = right.courier_delivery_id === currentUser.id &&
+        const rightDeliveryReady = Number(right.courier_delivery_id) === Number(currentUser.id) &&
           ['tayyor', 'yetkazilmoqda'].includes(right.status);
         return Number(rightDeliveryReady) - Number(leftDeliveryReady) || right.id - left.id;
       })
@@ -1412,10 +1412,11 @@ function renderCourierDeliveries() {
     let borderClass = 'border-left-delivering';
     if (ord.status === 'yuvishda' || ord.status === 'quritishda') borderClass = 'border-left-washing';
     if (ord.status === 'tayyor') borderClass = 'border-left-ready';
-    const canManageDelivery = currentUser.role !== 'courier' || ord.courier_delivery_id === currentUser.id;
+    const canManageDelivery = currentUser.role !== 'courier' ||
+      Number(ord.courier_delivery_id) === Number(currentUser.id);
     let deliveryAction = '';
     if (currentUser.role === 'courier' &&
-        ord.courier_pickup_id === currentUser.id &&
+        Number(ord.courier_pickup_id) === Number(currentUser.id) &&
         ord.status === 'yangi') {
       deliveryAction = `
         <button class="btn btn-primary" style="flex: 1.2;" onclick="quickUpdateStatus(${Number(ord.id)}, 'qabul_qilindi')">
@@ -1436,12 +1437,12 @@ function renderCourierDeliveries() {
       `;
     }
     const pickupHandoff = currentUser.role === 'courier' &&
-      ord.courier_pickup_id === currentUser.id &&
+      Number(ord.courier_pickup_id) === Number(currentUser.id) &&
       ['yangi', 'qabul_qilindi'].includes(ord.status)
       ? renderCourierHandoffControl(ord.id, 'pickup', 'Olib ketishni topshirish')
       : '';
     const deliveryHandoff = currentUser.role === 'courier' &&
-      ord.courier_delivery_id === currentUser.id &&
+      Number(ord.courier_delivery_id) === Number(currentUser.id) &&
     ['qabul_qilindi', 'yuvishda', 'quritishda', 'qadoqlayapti', 'tayyor', 'yetkazilmoqda'].includes(ord.status)
       ? renderCourierHandoffControl(ord.id, 'delivery', 'Yetkazishni topshirish')
       : '';
@@ -1799,7 +1800,7 @@ async function viewOrderDetails(orderId) {
     document.getElementById('modalOrderBody').innerHTML = bodyHtml;
 
     const courierDeliveryActions = currentUser?.role === 'courier' &&
-      ord.courier_delivery_id === currentUser.id
+      Number(ord.courier_delivery_id) === Number(currentUser.id)
       ? ord.status === 'tayyor'
         ? `<button class="btn btn-primary" onclick="updateDeliveryFromDetails(${Number(ord.id)}, 'yetkazilmoqda')"><i class="fa-solid fa-truck"></i> Yetkazishga chiqish</button>`
         : ord.status === 'yetkazilmoqda'

@@ -585,16 +585,16 @@ test('couriers can register collected items and confirm delivery to the wash sho
   assert.equal(readyOrder.total_area, 24);
   assert.equal(readyOrder.items[0].subtotal, 360000);
   assert.equal(readyOrder.payment_status, 'kutilmoqda');
+  assert.equal(readyOrder.courier_delivery_id, 4);
+  const deliveryCourier = await login('kuryer2', credentials.courier2);
+  const deliveryCourierSession = deliveryCourier.cookie.split(';')[0];
+  const readyForCourier = await request('/api/orders', { cookie: deliveryCourierSession });
+  assert.ok((await readyForCourier.json()).data.some(order =>
+    order.id === orderId && order.status === 'tayyor'
+  ));
 
-  const assignment = await request(`/api/orders/${orderId}/assign-courier`, {
-    cookie: ownerCookie,
-    method: 'PATCH',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ courier_delivery_id: courierId })
-  });
-  assert.equal(assignment.status, 200);
   const startedDelivery = await request(`/api/orders/${orderId}/status`, {
-    cookie: courierSession,
+    cookie: deliveryCourierSession,
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ status: 'yetkazilmoqda' })
