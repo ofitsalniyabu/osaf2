@@ -258,8 +258,8 @@ async function processTelegramUpdate(update) {
               COUNT(*) AS total_orders,
               SUM(CASE WHEN status = 'yangi' THEN 1 ELSE 0 END) AS new_orders,
               SUM(CASE WHEN status = 'qabul_qilindi' THEN 1 ELSE 0 END) AS accepted_orders,
-              SUM(CASE WHEN status IN ('yuvishda', 'quritishda', 'qadoqlayapti') THEN 1 ELSE 0 END) AS washing_orders,
-              SUM(CASE WHEN status = 'tayyor' THEN 1 ELSE 0 END) AS ready_orders,
+              SUM(CASE WHEN status IN ('yuvishda', 'quritishda', 'olchayapti', 'qadoqlayapti') THEN 1 ELSE 0 END) AS washing_orders,
+              SUM(CASE WHEN status IN ('qadoqlandi', 'tayyor') THEN 1 ELSE 0 END) AS ready_orders,
               SUM(CASE WHEN status = 'yetkazilmoqda' THEN 1 ELSE 0 END) AS delivering_orders,
               SUM(CASE WHEN status = 'yetkazildi' THEN 1 ELSE 0 END) AS delivered_orders,
               SUM(CASE WHEN status = 'bekor_qilindi' THEN 1 ELSE 0 END) AS cancelled_orders,
@@ -460,8 +460,9 @@ async function formatOrderMessage(orderId, actionType = 'status_change') {
   if (order.status === 'qabul_qilindi') { statusEmoji = '📦'; statusUz = 'Qabul qilindi (Kuryer oldi)'; }
   else if (order.status === 'yuvishda') { statusEmoji = '🧼'; statusUz = 'Yuvish jarayonida (Sexda)'; }
   else if (order.status === 'quritishda') { statusEmoji = '☀️'; statusUz = 'Quritish kamerasida'; }
+  else if (order.status === 'olchayapti') { statusEmoji = '📏'; statusUz = 'Gilam o‘lchamlari kiritilmoqda'; }
   else if (order.status === 'qadoqlayapti') { statusEmoji = '📦'; statusUz = 'Qadoqlanmoqda'; }
-  else if (order.status === 'tayyor') { statusEmoji = '✨'; statusUz = 'Qadoqlangan, yetkazishga tayyor'; }
+  else if (order.status === 'qadoqlandi' || order.status === 'tayyor') { statusEmoji = '✨'; statusUz = 'Qadoqlangan, yetkazishga tayyor'; }
   else if (order.status === 'yetkazilmoqda') { statusEmoji = '🚚'; statusUz = 'Dastavchik yo\'lda (Yetkazilmoqda)'; }
   else if (order.status === 'yetkazildi') { statusEmoji = '✅'; statusUz = 'Mijozga yetkazib topshirildi'; }
   else if (order.status === 'bekor_qilindi') { statusEmoji = '❌'; statusUz = 'Bekor qilindi'; }

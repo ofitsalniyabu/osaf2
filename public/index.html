@@ -112,6 +112,10 @@
           <i class="fa-solid fa-soap"></i>
           <span>Yuvuvchi Ish Maydoni</span>
         </button>
+        <button class="nav-item nav-packager" onclick="switchTab('packager-mode')">
+          <i class="fa-solid fa-box-open"></i>
+          <span>Qadoqlovchi Ish Maydoni</span>
+        </button>
         <button class="nav-item owner-only" onclick="switchTab('pricing')">
           <i class="fa-solid fa-tags"></i>
           <span>Kategoriya & Narxlar</span>
@@ -320,7 +324,9 @@
                   <option value="qabul_qilindi">Qabul qilindi</option>
                   <option value="yuvishda">Yuvishda</option>
                   <option value="quritishda">Quritishda</option>
+                  <option value="olchayapti">O‘lcham kiritilmoqda</option>
                   <option value="qadoqlayapti">Qadoqlayapti</option>
+                  <option value="qadoqlandi">Qadoqlandi (Yetkazishga tayyor)</option>
                   <option value="tayyor">Tayyor (Qadoqlangan)</option>
                   <option value="yetkazilmoqda">Yetkazilmoqda</option>
                   <option value="yetkazildi">Yetkazildi</option>
@@ -578,6 +584,7 @@
             </div>
           </div>
 
+          <div class="employee-payroll-panel mt-3" id="courierPayrollPanel"></div>
           <div class="courier-orders-grid mt-3" id="courierOrdersContainer"></div>
         </section>
 
@@ -593,7 +600,24 @@
               </button>
             </div>
           </div>
+          <div class="employee-payroll-panel mt-3" id="washerPayrollPanel"></div>
           <div class="courier-orders-grid mt-3" id="washerOrdersContainer"></div>
+        </section>
+
+        <section id="tab-packager-mode" class="tab-pane">
+          <div class="card courier-control-bar">
+            <div class="d-flex align-items-center justify-between flex-wrap gap-2">
+              <div>
+                <h3><i class="fa-solid fa-box-open"></i> Qadoqlovchi ish maydoni</h3>
+                <p>Yuvuvchi tayyorlagan buyurtmalarni qadoqlang va dastavchikka bering</p>
+              </div>
+              <button class="btn btn-outline" onclick="loadPackagerOrders()">
+                <i class="fa-solid fa-rotate"></i> Yangilash
+              </button>
+            </div>
+          </div>
+          <div class="employee-payroll-panel mt-3" id="packagerPayrollPanel"></div>
+          <div class="courier-orders-grid mt-3" id="packagerOrdersContainer"></div>
         </section>
 
         <!-- ================= 5. KATEGORIYA VA NARXLAR ================= -->
@@ -688,6 +712,27 @@
             </div>
             <div class="card-body">
               <p class="hint">Xavfsizlik uchun amaldagi parollar hech kimga ko‘rsatilmaydi. Ega boshqa xodimga yangi vaqtinchalik parol berishi mumkin; bu xodimning eski qurilmalaridagi sessiyalarni bekor qiladi.</p>
+            </div>
+            <div class="card-body payroll-admin-panel">
+              <h3><i class="fa-solid fa-money-bill-transfer"></i> Oylik foizi, avans va to‘lovlar</h3>
+              <p class="hint">Oylik shu oy mijozga yetkazilgan buyurtmalarning yakuniy summasidan hisoblanadi. Foiz har bir xodimga alohida qo‘llanadi.</p>
+              <form class="payroll-rates-form" onsubmit="savePayrollRates(event)">
+                <label>Dastavchik foizi (%)
+                  <input type="number" id="payrollRateCourier" min="0" max="100" step="0.01" value="0" required>
+                </label>
+                <label>Yuvuvchi foizi (%)
+                  <input type="number" id="payrollRateWasher" min="0" max="100" step="0.01" value="0" required>
+                </label>
+                <label>Qadoqlovchi foizi (%)
+                  <input type="number" id="payrollRatePackager" min="0" max="100" step="0.01" value="0" required>
+                </label>
+                <button class="btn btn-primary" type="submit"><i class="fa-solid fa-floppy-disk"></i> Foizlarni saqlash</button>
+              </form>
+              <div class="form-group payroll-month-picker">
+                <label for="payrollMonth">Hisoblanadigan oy</label>
+                <input type="month" id="payrollMonth" onchange="loadPayrollSummary(this.value)">
+              </div>
+              <div id="payrollSummaryContainer" class="table-responsive"></div>
             </div>
             <div class="table-responsive">
               <table class="table" id="staffTable">
@@ -953,6 +998,7 @@
             <select id="newStaffRole">
               <option value="courier">Dastavchik (Kuryer)</option>
               <option value="washer">Yuvuvchi</option>
+              <option value="packager">Qadoqlovchi</option>
               <option value="admin">Operator / Admin</option>
               <option value="owner">Ega Admin</option>
             </select>
@@ -1027,6 +1073,6 @@
   <!-- Toast -->
   <div id="toast" class="toast"></div>
 
-  <script src="app.js"></script>
+  <script src="app.js?v=20261013-payroll-delivery"></script>
 </body>
 </html>

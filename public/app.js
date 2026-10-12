@@ -4,6 +4,7 @@ let globalCategories = [];
 let globalCouriers = [];
 let globalOrders = [];
 let globalWasherOrders = [];
+let globalPackagerOrders = [];
 let authenticatedDataLoaded = false;
 let workflowRefreshTimer = null;
 let ownerNotificationInitialized = false;
@@ -310,10 +311,11 @@ async function initializeAuthenticatedApp() {
   if (authenticatedDataLoaded) return;
   authenticatedDataLoaded = true;
 
-  if (currentUser.role !== 'washer') await loadCategories();
-  if (['owner', 'admin', 'courier'].includes(currentUser.role)) {
+  if (['owner', 'admin', 'courier'].includes(currentUser.role)) await loadCategories();
+  if (['owner', 'admin'].includes(currentUser.role)) {
     await loadStaff();
     await loadDashboardStats();
+    if (currentUser.role === 'owner') await loadPayrollSummary();
   } else if (currentUser.role === 'courier') {
     const response = await fetch('/api/couriers');
     const result = await response.json();
@@ -322,9 +324,12 @@ async function initializeAuthenticatedApp() {
   }
   if (currentUser.role === 'washer') {
     await loadWasherOrders();
+  } else if (currentUser.role === 'packager') {
+    await loadPackagerOrders();
   } else {
     await loadOrders();
   }
+  if (['courier', 'washer', 'packager'].includes(currentUser.role)) await loadMyPayroll();
   if (currentUser.role === 'owner') await loadTgSettings();
 
   if (['owner', 'admin', 'courier'].includes(currentUser.role)) {
@@ -336,10 +341,14 @@ async function initializeAuthenticatedApp() {
   if (workflowRefreshTimer) clearInterval(workflowRefreshTimer);
   workflowRefreshTimer = setInterval(() => {
     if (!currentUser) return;
-    if (currentUser.role === 'washer') loadWasherOrders();
+    if (currentUser.role === 'washer') {
+      if (!globalWasherOrders.some(order => order.status === 'olchayapti')) loadWasherOrders();
+    }
+    else if (currentUser.role === 'packager') loadPackagerOrders();
     else loadOrders();
+    if (['courier', 'washer', 'packager'].includes(currentUser.role)) loadMyPayroll();
     if (currentUser.role === 'owner') loadOwnerNotifications();
-  }, currentUser.role === 'courier' ? 5000 : 30000);
+  }, ['courier', 'packager'].includes(currentUser.role) ? 5000 : 30000);
 }
 
 async function handleLogin(e) {
@@ -436,12 +445,14 @@ function applyUserSession() {
     'owner': 'Ega Admin',
     'admin': 'Operator / Admin',
     'courier': `Dastavchik (${currentUser.car_model || 'Mashina'})`,
-    'washer': 'Yuvuvchi'
+    'washer': 'Yuvuvchi',
+    'packager': 'Qadoqlovchi'
   };
   document.getElementById('sidebarUserRoleBadge').innerText = roleNames[currentUser.role] || currentUser.role;
 
   const ownerElements = document.querySelectorAll('.owner-only');
   document.querySelectorAll('.nav-washer').forEach(el => el.style.display = currentUser.role === 'washer' ? 'flex' : 'none');
+  document.querySelectorAll('.nav-packager').forEach(el => el.style.display = currentUser.role === 'packager' ? 'flex' : 'none');
   const notificationPanel = document.getElementById('ownerNotificationsPanel');
   if (notificationPanel) notificationPanel.style.display = currentUser.role === 'owner' ? 'block' : 'none';
   document.getElementById('orderItemsTable').classList.toggle('courier-intake', currentUser.role === 'courier');
@@ -475,6 +486,12 @@ function applyUserSession() {
     document.querySelectorAll('.courier-hidden-finance').forEach(el => el.style.display = 'none');
     document.getElementById('tab-new-order').style.display = 'none';
     switchTab('washer-mode');
+  } else if (currentUser.role === 'packager') {
+    ownerElements.forEach(el => el.style.display = 'none');
+    document.querySelectorAll('.nav-dashboard, .nav-orders, .nav-new-order, .nav-courier, .nav-washer').forEach(el => el.style.display = 'none');
+    document.querySelectorAll('.courier-hidden-finance').forEach(el => el.style.display = 'none');
+    document.getElementById('tab-new-order').style.display = 'none';
+    switchTab('packager-mode');
   } else if (currentUser.role === 'admin') {
     ownerElements.forEach(el => el.style.display = 'none');
     document.querySelectorAll('.nav-washer').forEach(el => el.style.display = 'none');
@@ -514,6 +531,7 @@ function switchTab(tabId) {
     'new-order': { title: "Yangi Buyurtma Qabul Qilish", sub: currentUser.role === 'courier' ? "Mijozdan olgan gilam, to‘shak va buyumlarni ro‘yxatdan o‘tkazing" : "Gilam o'lchamlari (uzunlik, eni, m²), adyol va gilamchalar hisobi" },
     'courier-mode': { title: "Dastavchik Ish Maydoni", sub: "Olingan buyurtmalarni sexga topshiring va tayyorlarini yetkazib bering" },
     'washer-mode': { title: "Yuvuvchi Ish Maydoni", sub: "Yuvishdan qadoqlashgacha va gilam o‘lchovlarini saqlash" },
+    'packager-mode': { title: "Qadoqlovchi Ish Maydoni", sub: "Yuvilgan buyurtmalarni qadoqlab, dastavchikka topshiring" },
     'pricing': { title: "Kategoriya va Xizmat Narxlari", sub: "Gilam, adyol, parda va buyumlar narxlarini belgilash" },
     'staff': { title: "Xodimlar va Dastavchiklar", sub: "Adminlar, operatorlar va mashinali kuryerlar ro'yxati" },
     'sessions': { title: "Faol qurilmalar", sub: "Tizimga kirgan qurilmalarni ko‘ring va shubhali sessiyalarni bekor qiling" },
@@ -528,6 +546,7 @@ function switchTab(tabId) {
 
   if (tabId === 'courier-mode') renderCourierDeliveries();
   if (tabId === 'washer-mode') renderWasherOrders();
+  if (tabId === 'packager-mode') renderPackagerOrders();
   if (tabId === 'orders') loadOrders();
   if (tabId === 'reports') loadReceiptsList();
   if (tabId === 'telegram-config') {
@@ -536,6 +555,7 @@ function switchTab(tabId) {
     loadTelegramUsers();
   }
   if (tabId === 'sessions') loadActiveSessions();
+  if (tabId === 'staff' && currentUser.role === 'owner') loadPayrollSummary();
 }
 
 // ================= LOKATSIYANI AUTO OLISH =================
@@ -697,6 +717,113 @@ function editCategoryPrompt(id, currentName, currentPrice) {
 }
 
 // ================= XODIMLAR VA DASTAVCHIKLAR =================
+async function loadPayrollSummary(month = '') {
+  const container = document.getElementById('payrollSummaryContainer');
+  if (!container || currentUser?.role !== 'owner') return;
+  const selectedMonth = month || document.getElementById('payrollMonth')?.value || '';
+  const route = selectedMonth
+    ? `/api/payroll/summary?month=${encodeURIComponent(selectedMonth)}`
+    : '/api/payroll/summary';
+  try {
+    const response = await fetch(route);
+    const result = await response.json();
+    if (!response.ok || !result.success) throw new Error(result.error || 'Oylik hisobini yuklab bo‘lmadi');
+    const payroll = result.data;
+    const monthInput = document.getElementById('payrollMonth');
+    if (monthInput) monthInput.value = payroll.month;
+    document.getElementById('payrollRateCourier').value = payroll.rates.courier;
+    document.getElementById('payrollRateWasher').value = payroll.rates.washer;
+    document.getElementById('payrollRatePackager').value = payroll.rates.packager;
+    if (!payroll.workers.length) {
+      container.innerHTML = '<p class="hint">Oylik hisoblash uchun faol dastavchik, yuvuvchi yoki qadoqlovchi topilmadi.</p>';
+      return;
+    }
+    container.innerHTML = `
+      <p class="hint">Shu oyda yetkazilgan buyurtmalar jami: <strong>${Number(payroll.order_revenue).toLocaleString()} so‘m</strong></p>
+      <table class="table payroll-summary-table">
+        <thead><tr>
+          <th>Xodim</th><th>Lavozim / foiz</th><th>Hisoblangan oylik</th>
+          <th>Avans va to‘lovlar</th><th>Qoldiq</th><th>To‘lov qaydi</th>
+        </tr></thead>
+        <tbody>${payroll.workers.map(worker => `
+          <tr>
+            <td><strong>${escapeHtml(worker.full_name)}</strong></td>
+            <td>${escapeHtml(worker.role_label)} · ${Number(worker.rate)}%</td>
+            <td>${Number(worker.earned_amount).toLocaleString()} so‘m</td>
+            <td>${Number(worker.paid_amount).toLocaleString()} so‘m</td>
+            <td><strong class="${worker.balance < 0 ? 'text-danger' : ''}">${Number(worker.balance).toLocaleString()} so‘m</strong></td>
+            <td>
+              <div class="payroll-payment-controls">
+                <input type="number" id="payrollAmount-${Number(worker.id)}" min="1" max="1000000000000" step="1" placeholder="Summa" aria-label="${escapeHtml(worker.full_name)} uchun summa">
+                <select id="payrollType-${Number(worker.id)}" aria-label="To‘lov turi">
+                  <option value="advance">Avans</option><option value="salary">Oylik</option>
+                </select>
+                <input type="text" id="payrollDescription-${Number(worker.id)}" maxlength="300" placeholder="Izoh (ixtiyoriy)" aria-label="To‘lov izohi">
+                <button class="btn btn-sm btn-primary" onclick="recordPayrollPayment(${Number(worker.id)})"><i class="fa-solid fa-money-bill-wave"></i> Qayd etish</button>
+              </div>
+            </td>
+          </tr>
+        `).join('')}</tbody>
+      </table>
+    `;
+  } catch (error) {
+    console.error('Oylik hisoboti xatosi:', error);
+    container.innerHTML = `<p class="text-danger">${escapeHtml(error.message)}</p>`;
+  }
+}
+
+async function savePayrollRates(event) {
+  event.preventDefault();
+  const rates = {
+    courier: Number(document.getElementById('payrollRateCourier').value),
+    washer: Number(document.getElementById('payrollRateWasher').value),
+    packager: Number(document.getElementById('payrollRatePackager').value)
+  };
+  try {
+    const response = await fetch('/api/payroll/rates', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ rates })
+    });
+    const result = await response.json();
+    if (!response.ok || !result.success) throw new Error(result.error || 'Foizlar saqlanmadi');
+    showToast('Lavozimlar uchun oylik foizlari saqlandi');
+    await loadPayrollSummary();
+  } catch (error) {
+    alert(error.message);
+  }
+}
+
+async function recordPayrollPayment(userId) {
+  const amountInput = document.getElementById(`payrollAmount-${Number(userId)}`);
+  const typeInput = document.getElementById(`payrollType-${Number(userId)}`);
+  const descriptionInput = document.getElementById(`payrollDescription-${Number(userId)}`);
+  const amount = Number(amountInput?.value);
+  if (!Number.isSafeInteger(amount) || amount < 1) {
+    alert('To‘lov summasini butun so‘mda kiriting.');
+    return;
+  }
+  try {
+    const response = await fetch('/api/payroll/payments', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        user_id: Number(userId),
+        month: document.getElementById('payrollMonth').value,
+        amount,
+        payment_type: typeInput.value,
+        description: descriptionInput.value.trim()
+      })
+    });
+    const result = await response.json();
+    if (!response.ok || !result.success) throw new Error(result.error || 'To‘lov qayd etilmadi');
+    showToast(result.message);
+    await loadPayrollSummary(document.getElementById('payrollMonth').value);
+  } catch (error) {
+    alert(error.message);
+  }
+}
+
 async function loadStaff() {
   try {
     const res = await fetch('/api/users');
@@ -738,7 +865,8 @@ function renderStaffTable(users) {
     'owner': '<span class="status-pill status-yetkazildi"><i class="fa-solid fa-user-shield" aria-hidden="true"></i> Ega Admin</span>',
     'admin': '<span class="status-pill status-yangi"><i class="fa-solid fa-user-gear" aria-hidden="true"></i> Operator / Admin</span>',
     'courier': '<span class="status-pill status-yetkazilmoqda"><i class="fa-solid fa-truck-fast" aria-hidden="true"></i> Dastavchik</span>',
-    'washer': '<span class="status-pill status-qadoqlayapti"><i class="fa-solid fa-soap" aria-hidden="true"></i> Yuvuvchi</span>'
+    'washer': '<span class="status-pill status-qadoqlayapti"><i class="fa-solid fa-soap" aria-hidden="true"></i> Yuvuvchi</span>',
+    'packager': '<span class="status-pill status-qadoqlayapti"><i class="fa-solid fa-box-open" aria-hidden="true"></i> Qadoqlovchi</span>'
   };
 
   tbody.innerHTML = users.map(u => `
@@ -1090,6 +1218,56 @@ async function submitNewOrder(e) {
   }
 }
 
+async function loadMyPayroll() {
+  const panelIds = {
+    courier: 'courierPayrollPanel',
+    washer: 'washerPayrollPanel',
+    packager: 'packagerPayrollPanel'
+  };
+  const panel = document.getElementById(panelIds[currentUser?.role]);
+  if (!panel) return;
+  try {
+    const response = await fetch('/api/payroll/me');
+    const result = await response.json();
+    if (!response.ok || !result.success) throw new Error(result.error || 'Oylik ma’lumotlarini yuklab bo‘lmadi');
+    const payroll = result.data;
+    const payments = payroll.payments.length
+      ? `<div class="table-responsive"><table class="table payroll-ledger-table">
+          <thead><tr><th>Sana</th><th>Turi</th><th>Izoh</th><th>Berilgan</th></tr></thead>
+          <tbody>${payroll.payments.map(payment => `
+            <tr>
+              <td>${escapeHtml(payment.created_at)}</td>
+              <td>${payment.payment_type === 'advance' ? 'Avans' : 'Oylik to‘lovi'}</td>
+              <td>${escapeHtml(payment.description || '-')}</td>
+              <td><strong>${Number(payment.amount).toLocaleString()} so‘m</strong></td>
+            </tr>
+          `).join('')}</tbody>
+        </table></div>`
+      : '<p class="hint">Bu oy uchun avans yoki oylik to‘lovi qayd etilmagan.</p>';
+    panel.innerHTML = `
+      <div class="card">
+        <div class="card-header">
+          <h3><i class="fa-solid fa-wallet"></i> Oylik, kirim-chiqim (${escapeHtml(payroll.month)})</h3>
+          <button class="btn btn-sm btn-outline" onclick="loadMyPayroll()"><i class="fa-solid fa-rotate"></i> Yangilash</button>
+        </div>
+        <div class="card-body">
+          <div class="payroll-metrics">
+            <div><span>Yetkazilgan buyurtmalar jami</span><strong>${Number(payroll.order_revenue).toLocaleString()} so‘m</strong></div>
+            <div><span>Foiz (${Number(payroll.rate)}%) — hisoblangan daromad</span><strong>${Number(payroll.earned_amount).toLocaleString()} so‘m</strong></div>
+            <div><span>Berilgan avans / oylik</span><strong class="text-danger">${Number(payroll.paid_amount).toLocaleString()} so‘m</strong></div>
+            <div><span>Qolgan oylik</span><strong class="${payroll.balance < 0 ? 'text-danger' : 'text-success'}">${Number(payroll.balance).toLocaleString()} so‘m</strong></div>
+          </div>
+          <h4 class="payroll-ledger-title">Kirim-chiqim tarixi</h4>
+          ${payments}
+        </div>
+      </div>
+    `;
+  } catch (error) {
+    console.error('Oylik ma’lumotlari xatosi:', error);
+    panel.innerHTML = `<div class="card card-body text-danger">${escapeHtml(error.message)}</div>`;
+  }
+}
+
 // ================= BUYURTMALAR RO'YXATI =================
 async function loadOrders() {
   try {
@@ -1119,6 +1297,124 @@ async function loadWasherOrders() {
   }
 }
 
+async function loadPackagerOrders() {
+  try {
+    const response = await fetch('/api/packager/orders');
+    const result = await response.json();
+    if (!response.ok || !result.success) throw new Error(result.error || 'Qadoqlash buyurtmalarini yuklab bo‘lmadi');
+    globalPackagerOrders = result.data;
+    renderPackagerOrders();
+  } catch (error) {
+    console.error('Packager orders error:', error);
+  }
+}
+
+function renderPackagerOrders() {
+  const container = document.getElementById('packagerOrdersContainer');
+  if (!container) return;
+  if (!globalPackagerOrders.length) {
+    container.innerHTML = `<div class="card p-4 text-center" style="grid-column: 1/-1; padding: 40px; color: var(--text-muted);">
+      <i class="fa-solid fa-box-open" style="font-size: 40px; margin-bottom: 12px; color: #cbd5e1;"></i>
+      <h3>Qadoqlash uchun buyurtma yo‘q</h3>
+      <p>Yuvuvchi o‘lcham va narxlarni saqlagach buyurtma shu yerda ko‘rinadi.</p>
+    </div>`;
+    return;
+  }
+  container.innerHTML = globalPackagerOrders.map(order => {
+    const items = (order.items || []).map(item => {
+      const dimensions = Number(item.area) > 0
+        ? `${Number(item.length).toFixed(2)} × ${Number(item.width).toFixed(2)} m (${Number(item.area).toFixed(2)} m²)`
+        : `${Number(item.quantity)} dona`;
+      const defaultPrice = Number(item.admin_price);
+      const quantityLabel = item.unit === 'kv_m' ? 'm²' : 'dona';
+      return `<div class="washer-measurement-row packager-price-row">
+        <div><strong>${escapeHtml(item.item_type)}</strong><br><small>${dimensions}${item.notes ? ` · ${escapeHtml(item.notes)}` : ''}</small></div>
+        <label>Narx / ${quantityLabel}
+          <input type="number" min="0" max="1000000000" step="500"
+            id="packager-price-${Number(item.id)}"
+            data-quantity="${item.unit === 'kv_m' ? Number(item.area) : Number(item.quantity)}"
+            value="${Number.isFinite(defaultPrice) ? defaultPrice : 0}"
+            oninput="previewPackagerOrderTotal(${Number(order.id)})">
+        </label>
+        <strong id="packager-subtotal-${Number(item.id)}">${Number(defaultPrice * (item.unit === 'kv_m' ? Number(item.area) : Number(item.quantity))).toLocaleString()} so‘m</strong>
+      </div>`;
+    }).join('');
+    return `<article class="card washer-order-card">
+      <div class="card-header">
+        <h3>${escapeHtml(order.order_number)}</h3>
+        <span class="status-pill status-qadoqlayapti">Qadoqlash navbatida</span>
+      </div>
+      <div class="card-body">
+        <p><strong>Mijoz:</strong> ${escapeHtml(order.customer_name || '—')}</p>
+        <p class="hint">Boshlang‘ich narxlar administrator belgilagan tarifdan olindi. Kerak bo‘lsa narxlarni shu yerda tahrirlang.</p>
+        <div class="washer-items-list">${items || '<p>Buyumlar topilmadi</p>'}</div>
+        <div class="packager-total">
+          <div>Buyumlar jami: <strong id="packager-total-${Number(order.id)}">0 so‘m</strong></div>
+          <div>Chegirma: <strong>${Number(order.discount || 0).toLocaleString()} so‘m</strong></div>
+          <div>To‘lanadi: <strong id="packager-final-${Number(order.id)}">0 so‘m</strong></div>
+          <small>Oldindan to‘langan: ${Number(order.paid_amount || 0).toLocaleString()} so‘m</small>
+        </div>
+        <div class="washer-order-actions">
+          <button class="btn btn-success" onclick="markOrderPacked(${Number(order.id)})">
+            <i class="fa-solid fa-box-open"></i> Qadoqlandi — dastavchikka berish
+          </button>
+        </div>
+      </div>
+    </article>`;
+  }).join('');
+  globalPackagerOrders.forEach(order => previewPackagerOrderTotal(order.id));
+}
+
+function previewPackagerOrderTotal(orderId) {
+  const order = globalPackagerOrders.find(item => Number(item.id) === Number(orderId));
+  if (!order) return;
+  let total = 0;
+  for (const item of order.items || []) {
+    const input = document.getElementById(`packager-price-${Number(item.id)}`);
+    const price = Number(input?.value);
+    const quantity = Number(input?.dataset.quantity);
+    const subtotal = Math.round(price * quantity);
+    if (input && Number.isFinite(price) && price >= 0 && Number.isFinite(quantity) && subtotal >= 0) {
+      total += subtotal;
+      const subtotalElement = document.getElementById(`packager-subtotal-${Number(item.id)}`);
+      if (subtotalElement) subtotalElement.textContent = `${subtotal.toLocaleString()} so‘m`;
+    }
+  }
+  const discount = Number(order.discount || 0);
+  const totalElement = document.getElementById(`packager-total-${Number(order.id)}`);
+  const finalElement = document.getElementById(`packager-final-${Number(order.id)}`);
+  if (totalElement) totalElement.textContent = `${total.toLocaleString()} so‘m`;
+  if (finalElement) finalElement.textContent = `${Math.max(0, total - discount).toLocaleString()} so‘m`;
+}
+
+async function markOrderPacked(orderId) {
+  const order = globalPackagerOrders.find(item => Number(item.id) === Number(orderId));
+  if (!order) return;
+  const prices = order.items.map(item => ({
+    id: Number(item.id),
+    unit_price: Number(document.getElementById(`packager-price-${Number(item.id)}`)?.value)
+  }));
+  if (prices.some(item => !Number.isFinite(item.unit_price) || item.unit_price < 0 || item.unit_price > 1000000000)) {
+    alert('Har bir buyum uchun 0 dan 1 000 000 000 so‘mgacha narx kiriting.');
+    return;
+  }
+  if (!confirm('Admin tariflari yoki kiritgan narxlaringiz bilan yakuniy summani saqlab, buyurtmani qadoqlangan deb belgilaysizmi?')) return;
+  try {
+    const response = await fetch(`/api/packager/orders/${orderId}/packed`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ prices })
+    });
+    const result = await response.json();
+    if (!response.ok || !result.success) throw new Error(result.error || 'Buyurtmani qadoqlangan deb belgilab bo‘lmadi');
+    showToast(result.message || 'Buyurtma barcha dastavchiklarning yetkazish ro‘yxatiga chiqarildi');
+    if (result.telegram_warning) showToast(result.telegram_warning, 'info');
+    await loadPackagerOrders();
+  } catch (error) {
+    alert(error.message);
+  }
+}
+
 function renderWasherOrders() {
   const container = document.getElementById('washerOrdersContainer');
   if (!container) return;
@@ -1134,13 +1430,13 @@ function renderWasherOrders() {
   const stages = {
     qabul_qilindi: { label: 'Sexga qabul qilindi', next: 'yuvishda', nextLabel: 'Yuvishni boshlash', icon: 'fa-play' },
     yuvishda: { label: 'Yuvishda', next: 'quritishda', nextLabel: 'Quritishga o‘tkazish', icon: 'fa-fan' },
-    quritishda: { label: 'Quritishda', next: 'qadoqlayapti', nextLabel: 'Qadoqlashni boshlash', icon: 'fa-box' },
-    qadoqlayapti: { label: 'Qadoqlayapti', next: null, nextLabel: null, icon: 'fa-ruler-combined' }
+    quritishda: { label: 'Quritishda', next: 'olchayapti', nextLabel: 'O‘lcham va narx kiritish', icon: 'fa-ruler-combined' },
+    olchayapti: { label: 'O‘lcham va narx kiritish', next: null, nextLabel: null, icon: 'fa-ruler-combined' }
   };
   container.innerHTML = globalWasherOrders.map(order => {
     const stage = stages[order.status];
     const itemsHtml = order.items.map(item => {
-        const editable = order.status === 'qadoqlayapti';
+        const editable = order.status === 'olchayapti';
       if (item.unit === 'kv_m') {
         return `<div class="washer-measurement-row">
           <strong>${escapeHtml(item.item_type)}</strong>
@@ -1166,7 +1462,7 @@ function renderWasherOrders() {
     }).join('');
     const action = stage.next
       ? `<button class="btn btn-primary" onclick="advanceWasherOrder(${Number(order.id)}, '${stage.next}')"><i class="fa-solid ${stage.icon}"></i> ${stage.nextLabel}</button>`
-      : `<button class="btn btn-success" onclick="saveWasherMeasurements(${Number(order.id)})"><i class="fa-solid fa-floppy-disk"></i> O‘lcham va narxlarni saqlash</button>`;
+      : `<button class="btn btn-success" onclick="saveWasherMeasurements(${Number(order.id)})"><i class="fa-solid fa-floppy-disk"></i> Saqlash va qadoqlovchiga topshirish</button>`;
     return `<article class="card washer-order-card">
       <div class="card-header">
         <h3>${escapeHtml(order.order_number)}</h3>
@@ -1174,12 +1470,12 @@ function renderWasherOrders() {
       </div>
       <div class="card-body">
         <div class="washer-items-list">${itemsHtml || '<p class="hint">Buyumlar topilmadi</p>'}</div>
-        ${order.status === 'qadoqlayapti' ? '<p class="hint">Haqiqiy o‘lcham va narxni faqat yuvuvchi kiritadi. Bu bosqichda buyurtma dastavchik ro‘yxatida ko‘rinadi; narxlar saqlanmaguncha yetkazishga chiqib bo‘lmaydi.</p><strong id="washer-total-preview-' + Number(order.id) + '">Jami: hisoblanmoqda</strong>' : ''}
+        ${order.status === 'olchayapti' ? '<p class="hint">O‘lcham va narxni saqlaganingizda buyurtma qadoqlovchiga o‘tadi. Dastavchik faqat qadoqlovchi tasdiqlagandan so‘ng uni ko‘radi.</p><strong id="washer-total-preview-' + Number(order.id) + '">Jami: hisoblanmoqda</strong>' : ''}
         <div class="washer-order-actions">${action}</div>
       </div>
     </article>`;
   }).join('');
-  globalWasherOrders.filter(order => order.status === 'qadoqlayapti')
+  globalWasherOrders.filter(order => order.status === 'olchayapti')
     .forEach(order => previewWasherOrderTotal(order.id));
 }
 
@@ -1229,26 +1525,27 @@ async function saveWasherMeasurements(orderId) {
     alert(error.message);
   }
 
-  function previewWasherOrderTotal(orderId) {
-    const order = globalWasherOrders.find(item => Number(item.id) === Number(orderId));
-    const preview = document.getElementById(`washer-total-preview-${Number(orderId)}`);
-    if (!order || !preview) return;
-    let areaTotal = 0;
-    let amountTotal = 0;
-    for (const item of order.items) {
-      const unitPrice = Number(document.getElementById(`washer-price-${Number(item.id)}`).value) || 0;
-      if (item.unit === 'kv_m') {
-        const length = Number(document.getElementById(`washer-length-${Number(item.id)}`).value) || 0;
-        const width = Number(document.getElementById(`washer-width-${Number(item.id)}`).value) || 0;
-        const area = Math.round(length * width * Number(item.quantity || 1) * 100) / 100;
-        areaTotal += area;
-        amountTotal += Math.round(unitPrice * area);
-      } else {
-        amountTotal += Math.round(unitPrice * Number(item.quantity || 1));
-      }
+}
+
+function previewWasherOrderTotal(orderId) {
+  const order = globalWasherOrders.find(item => Number(item.id) === Number(orderId));
+  const preview = document.getElementById(`washer-total-preview-${Number(orderId)}`);
+  if (!order || !preview) return;
+  let areaTotal = 0;
+  let amountTotal = 0;
+  for (const item of order.items) {
+    const unitPrice = Number(document.getElementById(`washer-price-${Number(item.id)}`).value) || 0;
+    if (item.unit === 'kv_m') {
+      const length = Number(document.getElementById(`washer-length-${Number(item.id)}`).value) || 0;
+      const width = Number(document.getElementById(`washer-width-${Number(item.id)}`).value) || 0;
+      const area = Math.round(length * width * Number(item.quantity || 1) * 100) / 100;
+      areaTotal += area;
+      amountTotal += Math.round(unitPrice * area);
+    } else {
+      amountTotal += Math.round(unitPrice * Number(item.quantity || 1));
     }
-    preview.textContent = `Jami: ${areaTotal.toFixed(2)} m² · ${Math.round(amountTotal).toLocaleString()} so‘m`;
   }
+  preview.textContent = `Jami: ${areaTotal.toFixed(2)} m² · ${Math.round(amountTotal).toLocaleString()} so‘m`;
 }
 
 async function loadOwnerNotifications() {
@@ -1321,7 +1618,9 @@ function getStatusPill(status) {
     'qabul_qilindi': { label: 'Qabul qilindi', icon: 'fa-box-open', cls: 'status-qabul_qilindi' },
     'yuvishda': { label: 'Yuvishda', icon: 'fa-soap', cls: 'status-yuvishda' },
     'quritishda': { label: 'Quritishda', icon: 'fa-fan', cls: 'status-quritishda' },
+    'olchayapti': { label: 'O‘lcham kiritilmoqda', icon: 'fa-ruler-combined', cls: 'status-olchayapti' },
     'qadoqlayapti': { label: 'Qadoqlayapti', icon: 'fa-box', cls: 'status-qadoqlayapti' },
+    'qadoqlandi': { label: 'Qadoqlandi — yetkazishga tayyor', icon: 'fa-box-open', cls: 'status-tayyor' },
     'tayyor': { label: 'Tayyor (Qadoqlangan)', icon: 'fa-box-open', cls: 'status-tayyor' },
     'yetkazilmoqda': { label: 'Yetkazilmoqda', icon: 'fa-truck-fast', cls: 'status-yetkazilmoqda' },
     'yetkazildi': { label: 'Yetkazildi', icon: 'fa-circle-check', cls: 'status-yetkazildi' },
@@ -1438,7 +1737,7 @@ function renderCourierDeliveries() {
   const courierFilter = document.getElementById('courierActiveSelect') ? document.getElementById('courierActiveSelect').value : 'all';
 
   const matchingOrders = globalOrders.filter(o => {
-    if (courierFilter !== 'all') {
+    if (currentUser.role !== 'courier' && courierFilter !== 'all') {
       return String(o.courier_pickup_id) === courierFilter || String(o.courier_delivery_id) === courierFilter;
     }
     return true;
@@ -1448,9 +1747,9 @@ function renderCourierDeliveries() {
       .filter(order => !['yetkazildi', 'bekor_qilindi'].includes(order.status))
       .sort((left, right) => {
         const leftDeliveryReady = Number(left.courier_delivery_id) === Number(currentUser.id) &&
-          ['qadoqlayapti', 'tayyor', 'yetkazilmoqda'].includes(left.status);
+          ['qadoqlandi', 'tayyor', 'yetkazilmoqda'].includes(left.status);
         const rightDeliveryReady = Number(right.courier_delivery_id) === Number(currentUser.id) &&
-          ['qadoqlayapti', 'tayyor', 'yetkazilmoqda'].includes(right.status);
+          ['qadoqlandi', 'tayyor', 'yetkazilmoqda'].includes(right.status);
         return Number(rightDeliveryReady) - Number(leftDeliveryReady) || right.id - left.id;
       })
     : matchingOrders;
@@ -1466,8 +1765,9 @@ function renderCourierDeliveries() {
   container.innerHTML = orders.map(ord => {
     let borderClass = 'border-left-delivering';
     if (ord.status === 'yuvishda' || ord.status === 'quritishda') borderClass = 'border-left-washing';
-    if (['qadoqlayapti', 'tayyor'].includes(ord.status)) borderClass = 'border-left-ready';
+    if (['qadoqlandi', 'tayyor'].includes(ord.status)) borderClass = 'border-left-ready';
     const canManageDelivery = currentUser.role !== 'courier' ||
+      ['qadoqlandi', 'tayyor'].includes(ord.status) ||
       Number(ord.courier_delivery_id) === Number(currentUser.id);
     let deliveryAction = '';
     if (currentUser.role === 'courier' &&
@@ -1478,15 +1778,12 @@ function renderCourierDeliveries() {
           <i class="fa-solid fa-warehouse"></i> Sexga topshirdim
         </button>
       `;
-    } else if (canManageDelivery && ord.status === 'tayyor') {
+    } else if (canManageDelivery && ['qadoqlandi', 'tayyor'].includes(ord.status)) {
+      const deliveryClick = currentUser.role === 'courier'
+        ? `quickUpdateStatus(${Number(ord.id)}, 'yetkazilmoqda')`
+        : `viewOrderDetails(${Number(ord.id)})`;
       deliveryAction = `
-        <button class="btn btn-primary" style="flex: 1.2;" onclick="viewOrderDetails(${Number(ord.id)})">
-          <i class="fa-solid fa-truck"></i> Yetkazib berish
-        </button>
-      `;
-    } else if (canManageDelivery && ord.status === 'qadoqlayapti') {
-      deliveryAction = `
-        <button class="btn btn-primary" style="flex: 1.2;" onclick="viewOrderDetails(${Number(ord.id)})">
+        <button class="btn btn-primary" style="flex: 1.2;" onclick="${deliveryClick}">
           <i class="fa-solid fa-truck"></i> Yetkazib berish
         </button>
       `;
@@ -1497,17 +1794,6 @@ function renderCourierDeliveries() {
         </button>
       `;
     }
-    const pickupHandoff = currentUser.role === 'courier' &&
-      Number(ord.courier_pickup_id) === Number(currentUser.id) &&
-      ['yangi', 'qabul_qilindi'].includes(ord.status)
-      ? renderCourierHandoffControl(ord.id, 'pickup', 'Olib ketishni topshirish')
-      : '';
-    const deliveryHandoff = currentUser.role === 'courier' &&
-      Number(ord.courier_delivery_id) === Number(currentUser.id) &&
-    ['qabul_qilindi', 'yuvishda', 'quritishda', 'qadoqlayapti', 'tayyor', 'yetkazilmoqda'].includes(ord.status)
-      ? renderCourierHandoffControl(ord.id, 'delivery', 'Yetkazishni topshirish')
-      : '';
-
     const itemsListHtml = (ord.items || []).map(i => `
       <li>• <strong>${escapeHtml(i.item_type)}</strong>: ${(i.length && i.width) ? `${i.length}x${i.width}m (${i.area}m²)` : `${i.quantity} dona`} ${i.notes ? `<i class="text-muted">(${escapeHtml(i.notes)})</i>` : ''}</li>
     `).join('');
@@ -1563,64 +1849,9 @@ function renderCourierDeliveries() {
             <i class="fa-brands fa-telegram"></i>
           </button>
         </div>
-        ${pickupHandoff || deliveryHandoff ? `
-          <div class="courier-handoff-controls">
-            <strong><i class="fa-solid fa-arrows-turn-to-dots"></i> Boshqa kuryerga topshirish</strong>
-            ${pickupHandoff}
-            ${deliveryHandoff}
-          </div>
-        ` : ''}
       </div>
     `;
   }).join('');
-}
-
-function renderCourierHandoffControl(orderId, assignment, label) {
-  const options = globalCouriers
-    .filter(courier => courier.id !== currentUser.id)
-    .map(courier => `<option value="${Number(courier.id)}">${escapeHtml(courier.full_name)}</option>`)
-    .join('');
-  return `
-    <div class="courier-handoff-row">
-      <label for="handoff-${orderId}-${assignment}">${label}</label>
-      <div>
-        <select id="handoff-${orderId}-${assignment}">
-          <option value="">Kuryerni tanlang</option>${options}
-        </select>
-        <button class="btn btn-sm btn-outline-primary" onclick="handoffOrder(${Number(orderId)}, '${assignment}')">
-          <i class="fa-solid fa-share"></i> Topshirish
-        </button>
-      </div>
-    </div>
-  `;
-}
-
-async function handoffOrder(orderId, assignment) {
-  const courierSelect = document.getElementById(`handoff-${orderId}-${assignment}`);
-  const to_courier_id = courierSelect ? courierSelect.value : '';
-  if (!to_courier_id) {
-    alert('Buyurtmani oladigan kuryerni tanlang');
-    return;
-  }
-  const notes = prompt('Topshirishga qisqa izoh yozing (ixtiyoriy):') || '';
-  try {
-    const response = await fetch(`/api/orders/${orderId}/handoff`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ assignment, to_courier_id: Number(to_courier_id), notes })
-    });
-    const result = await response.json();
-    if (!response.ok || !result.success) throw new Error(result.error || 'Buyurtmani topshirib bo‘lmadi');
-    showToast(result.message);
-    if (result.notification_warning) {
-      showToast(`Buyurtma topshirildi, ammo Telegram xabari yuborilmadi: ${result.notification_warning}`, 'info');
-    } else if (result.notifications?.some(notification => !notification.success)) {
-      showToast('Buyurtma topshirildi, Telegramda ayrim kuryerlarga xabar bormadi.', 'info');
-    }
-    await loadOrders();
-  } catch (error) {
-    alert(error.message);
-  }
 }
 
 async function quickUpdateStatus(orderId, newStatus, autoPayAmount = null) {
@@ -1652,7 +1883,7 @@ async function viewOrderDetails(orderId) {
   try {
     const res = await fetch(`/api/orders/${orderId}`);
     const json = await res.json();
-    if (!json.success) return;
+    if (!res.ok || !json.success) throw new Error(json.error || 'Buyurtma ma’lumotlarini yuklab bo‘lmadi');
 
     const ord = json.data;
     document.getElementById('modalOrderTitle').innerText = `${ord.order_number} - Buyurtma Tafsilotlari`;
@@ -1757,19 +1988,6 @@ async function viewOrderDetails(orderId) {
         <span><strong>To‘lov holati:</strong> ${escapeHtml(ord.payment_status || '-')}</span>
       </div>
 
-      ${(ord.handoffs || []).length ? `
-        <div class="order-handoff-history">
-          <h4><i class="fa-solid fa-clock-rotate-left"></i> Kuryerlar topshirish tarixi</h4>
-          ${(ord.handoffs || []).map(handoff => `
-            <p><strong>${handoff.assignment === 'pickup' ? 'Olib ketish' : 'Yetkazish'}:</strong>
-              ${escapeHtml(handoff.from_courier_name)} → ${escapeHtml(handoff.to_courier_name)}
-              <small>${escapeHtml(handoff.created_at || '')}</small>
-              ${handoff.notes ? `<br><span>${escapeHtml(handoff.notes)}</span>` : ''}
-            </p>
-          `).join('')}
-        </div>
-      ` : ''}
-
       <h4>Buyumlar tarkibi:</h4>
       <div class="table-responsive mt-2 mb-3">
         <table class="table">
@@ -1811,7 +2029,7 @@ async function viewOrderDetails(orderId) {
         </div>
       </div>
 
-      <hr style="margin-bottom: 16px; border: none; border-top: 1px solid var(--border-color);">
+      ${currentUser?.role !== 'courier' ? `<hr style="margin-bottom: 16px; border: none; border-top: 1px solid var(--border-color);">
 
       <h4>Boshqarish va Holatni o'zgartirish:</h4>
       <div class="form-row mt-2">
@@ -1822,7 +2040,9 @@ async function viewOrderDetails(orderId) {
             <option value="qabul_qilindi" ${ord.status === 'qabul_qilindi' ? 'selected' : ''}>Qabul qilindi (Kuryer oldi)</option>
             <option value="yuvishda" ${ord.status === 'yuvishda' ? 'selected' : ''}>Yuvish jarayonida</option>
             <option value="quritishda" ${ord.status === 'quritishda' ? 'selected' : ''}>Quritish kamerasida</option>
+            <option value="olchayapti" ${ord.status === 'olchayapti' ? 'selected' : ''}>Gilam o‘lchanmoqda</option>
             <option value="qadoqlayapti" ${ord.status === 'qadoqlayapti' ? 'selected' : ''}>Qadoqlayapti</option>
+            <option value="qadoqlandi" ${ord.status === 'qadoqlandi' ? 'selected' : ''}>Qadoqlandi (Yetkazishga tayyor)</option>
             <option value="tayyor" ${ord.status === 'tayyor' ? 'selected' : ''}>Tayyor (Qadoqlangan)</option>
             <option value="yetkazilmoqda" ${ord.status === 'yetkazilmoqda' ? 'selected' : ''}>Kuryer yo'lda (Yetkazilmoqda)</option>
             <option value="yetkazildi" ${ord.status === 'yetkazildi' ? 'selected' : ''}>Yetkazib topshirildi</option>
@@ -1856,13 +2076,15 @@ async function viewOrderDetails(orderId) {
         <label>Kuryer / Admin izohi:</label>
         <input type="text" id="modalUpdateNotes" value="${escapeHtml(ord.courier_notes || '')}" placeholder="Izoh qo'shish...">
       </div>
+      ` : ''}
     `;
 
     document.getElementById('modalOrderBody').innerHTML = bodyHtml;
 
     const courierDeliveryActions = currentUser?.role === 'courier' &&
-      Number(ord.courier_delivery_id) === Number(currentUser.id)
-      ? ['tayyor', 'qadoqlayapti'].includes(ord.status)
+      (['qadoqlandi', 'tayyor'].includes(ord.status) ||
+       Number(ord.courier_delivery_id) === Number(currentUser.id))
+      ? ['tayyor', 'qadoqlandi'].includes(ord.status)
         ? `<button class="btn btn-primary" onclick="updateDeliveryFromDetails(${Number(ord.id)}, 'yetkazilmoqda')"><i class="fa-solid fa-truck"></i> Yetkazishga chiqish</button>`
         : ord.status === 'yetkazilmoqda'
           ? `<button class="btn btn-success" onclick="updateDeliveryFromDetails(${Number(ord.id)}, 'yetkazildi', ${Number(ord.final_amount)})"><i class="fa-solid fa-check"></i> Yetkazildi va to‘lov olindi</button>`
@@ -1881,14 +2103,15 @@ async function viewOrderDetails(orderId) {
         <i class="fa-solid fa-file-word text-primary"></i> Word Kvitansiya
       </button>
       ${courierDeliveryActions}
-      <button class="btn btn-primary" onclick="saveOrderDetailsChanges(${Number(ord.id)})">
+      ${currentUser?.role !== 'courier' ? `<button class="btn btn-primary" onclick="saveOrderDetailsChanges(${Number(ord.id)})">
         <i class="fa-solid fa-floppy-disk"></i> O'zgarishlarni Saqlash
-      </button>
+      </button>` : ''}
     `;
 
     document.getElementById('orderModal').classList.add('show');
   } catch (err) {
     console.error(err);
+    alert(err.message || 'Buyurtma tafsilotlarini yuklab bo‘lmadi');
   }
 }
 

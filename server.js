@@ -88,9 +88,14 @@ function setSessionCookie(res, token, maxAge) {
 }
 
 function canAccessOrder(user, order) {
-  return user.role !== 'courier' ||
-    order.courier_pickup_id === user.id ||
-    order.courier_delivery_id === user.id;
+  if (user.role !== 'courier') return true;
+  const isPickupWork = Number(order.courier_pickup_id) === Number(user.id) &&
+    ['yangi', 'qabul_qilindi'].includes(order.status);
+  const isOpenDeliveryWork = ['qadoqlandi', 'tayyor'].includes(order.status);
+  const isAssignedDeliveryWork = Number(order.courier_delivery_id) === Number(user.id) &&
+    ['yetkazilmoqda', 'yetkazildi'].includes(order.status);
+  const isDeliveryWork = isOpenDeliveryWork || isAssignedDeliveryWork;
+  return isPickupWork || isDeliveryWork;
 }
 
 function getTashkentDayRange(now = new Date()) {
@@ -109,6 +114,48 @@ function getTashkentDayRange(now = new Date()) {
   const end = new Date(Date.UTC(year, month - 1, day + 1) - 5 * 60 * 60 * 1000);
   const toDatabaseTimestamp = value => value.toISOString().slice(0, 19).replace('T', ' ');
   return { date, start: toDatabaseTimestamp(start), end: toDatabaseTimestamp(end) };
+}
+
+function getTashkentMonth(now = new Date()) {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Tashkent',
+    year: 'numeric',
+    month: '2-digit'
+  }).formatToParts(now);
+  const values = Object.fromEntries(parts.map(part => [part.type, part.value]));
+  return `${values.year}-${values.month}`;
+}
+
+function getPayrollMonthRange(month) {
+  if (typeof month !== 'string' || !/^\d{4}-(0[1-9]|1[0-2])$/.test(month)) return null;
+  const [year, monthNumber] = month.split('-').map(Number);
+  const start = new Date(Date.UTC(year, monthNumber - 1, 1) - 5 * 60 * 60 * 1000);
+  const end = new Date(Date.UTC(year, monthNumber, 1) - 5 * 60 * 60 * 1000);
+  const toDatabaseTimestamp = value => value.toISOString().slice(0, 19).replace('T', ' ');
+  return { start: toDatabaseTimestamp(start), end: toDatabaseTimestamp(end) };
+}
+
+const PAYROLL_ROLES = ['courier', 'washer', 'packager'];
+const PAYROLL_ROLE_LABELS = {
+  courier: 'Dastavchik',
+  washer: 'Yuvuvchi',
+  packager: 'Qadoqlovchi'
+};
+
+async function getPayrollRates() {
+  const rows = await db.all(
+    'SELECT key, value FROM settings WHERE key IN (?, ?, ?)',
+    PAYROLL_ROLES.map(role => `payroll_rate_${role}`)
+  );
+  const rates = Object.fromEntries(PAYROLL_ROLES.map(role => [role, 0]));
+  for (const row of rows) {
+    const role = row.key.slice('payroll_rate_'.length);
+    const rate = Number(row.value);
+    if (PAYROLL_ROLES.includes(role) && Number.isFinite(rate) && rate >= 0 && rate <= 100) {
+      rates[role] = rate;
+    }
+  }
+  return rates;
 }
 
 async function claimUnexportedOrders(batchId, exportedBy = null) {
@@ -378,8 +425,17 @@ app.use('/api', async (req, res, next) => {
         !(req.method === 'GET' && req.path === '/auth/me') &&
         !(req.method === 'POST' && ['/auth/logout', '/auth/change-password'].includes(req.path)) &&
         !(req.method === 'GET' && req.path === '/washer/orders') &&
+        !(req.method === 'GET' && req.path === '/payroll/me') &&
         !(/^\/washer\/orders\/\d+\/(status|measurements)$/.test(req.path) && req.method === 'POST')) {
       return res.status(403).json({ success: false, error: 'Yuvuvchi faqat yuvish ish maydonidan foydalanishi mumkin' });
+    }
+    if (user.role === 'packager' &&
+        !(req.method === 'GET' && req.path === '/auth/me') &&
+        !(req.method === 'POST' && ['/auth/logout', '/auth/change-password'].includes(req.path)) &&
+        !(req.method === 'GET' && req.path === '/packager/orders') &&
+        !(req.method === 'GET' && req.path === '/payroll/me') &&
+        !(req.method === 'POST' && /^\/packager\/orders\/\d+\/packed$/.test(req.path))) {
+      return res.status(403).json({ success: false, error: 'Qadoqlovchi faqat qadoqlash ish maydonidan foydalanishi mumkin' });
     }
     next();
   } catch (err) {
@@ -425,7 +481,7 @@ app.get('/api/washer/orders', async (req, res) => {
     const orders = await db.all(`
       SELECT id, order_number, status, created_at
       FROM orders
-      WHERE status IN ('qabul_qilindi', 'yuvishda', 'quritishda', 'qadoqlayapti')
+      WHERE status IN ('qabul_qilindi', 'yuvishda', 'quritishda', 'olchayapti')
       ORDER BY id DESC
     `);
     const data = await Promise.all(orders.map(async order => ({
@@ -456,20 +512,12 @@ app.post('/api/washer/orders/:id/status', async (req, res) => {
     const nextStatus = {
       qabul_qilindi: 'yuvishda',
       yuvishda: 'quritishda',
-      quritishda: 'qadoqlayapti'
+      quritishda: 'olchayapti'
     }[order.status];
     if (status !== nextStatus) {
       return res.status(400).json({ success: false, error: 'Buyurtmani keyingi yuvish bosqichiga o‘tkazing' });
     }
-    await db.run(`
-      UPDATE orders
-      SET status = ?,
-          courier_delivery_id = CASE
-            WHEN ? = 'qadoqlayapti' THEN COALESCE(courier_delivery_id, courier_pickup_id)
-            ELSE courier_delivery_id
-          END
-      WHERE id = ?
-    `, [status, status, order.id]);
+    await db.run('UPDATE orders SET status = ? WHERE id = ?', [status, order.id]);
     res.json({ success: true, status });
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });
@@ -487,8 +535,8 @@ app.post('/api/washer/orders/:id/measurements', async (req, res) => {
     }
     const order = await db.get('SELECT * FROM orders WHERE id = ?', [req.params.id]);
     if (!order) return res.status(404).json({ success: false, error: 'Buyurtma topilmadi' });
-    if (order.status !== 'qadoqlayapti') {
-      return res.status(409).json({ success: false, error: 'O‘lchamlarni faqat qadoqlash bosqichida saqlash mumkin' });
+    if (order.status !== 'olchayapti') {
+      return res.status(409).json({ success: false, error: 'O‘lchamlarni faqat o‘lchash bosqichida saqlash mumkin' });
     }
 
     const items = await db.all(`
@@ -562,7 +610,7 @@ app.post('/api/washer/orders/:id/measurements', async (req, res) => {
           : 'kutilmoqda';
       await transaction.run(`
         UPDATE orders
-        SET total_area = ?, total_amount = ?, final_amount = ?, payment_status = ?
+        SET status = 'qadoqlayapti', total_area = ?, total_amount = ?, final_amount = ?, payment_status = ?
         WHERE id = ?
       `, [totalArea, totalAmount, finalAmount, paymentStatus, order.id]);
     });
@@ -584,6 +632,178 @@ app.post('/api/washer/orders/:id/measurements', async (req, res) => {
       'Buyurtma o‘lchami yoki umumiy narxi juda katta'
     ].includes(error.message);
     res.status(isMeasurementError ? 400 : 500).json({ success: false, error: error.message });
+  }
+});
+
+app.get('/api/packager/orders', async (req, res) => {
+  if (req.user.role !== 'packager') {
+    return res.status(403).json({ success: false, error: 'Bu ish maydoni faqat qadoqlovchi uchun' });
+  }
+  try {
+    const orders = await db.all(`
+      SELECT o.id, o.order_number, o.status, o.total_area, o.total_items, o.total_amount,
+        o.final_amount, o.discount, o.paid_amount, o.created_at,
+        c.full_name AS customer_name
+      FROM orders o
+      JOIN customers c ON c.id = o.customer_id
+      WHERE o.status = 'qadoqlayapti'
+      ORDER BY o.id DESC
+    `);
+    const data = await Promise.all(orders.map(async order => ({
+      ...order,
+      items: await db.all(`
+        SELECT oi.id, oi.category_id, oi.item_type, oi.length, oi.width, oi.area,
+          oi.quantity, oi.notes, oi.unit_price, oi.subtotal,
+          c.unit, c.price_per_unit AS admin_price
+        FROM order_items oi
+        JOIN categories c ON c.id = oi.category_id
+        WHERE oi.order_id = ?
+        ORDER BY oi.id
+      `, [order.id])
+    })));
+    res.json({ success: true, data });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+app.post('/api/packager/orders/:id/packed', async (req, res) => {
+  if (req.user.role !== 'packager') {
+    return res.status(403).json({ success: false, error: 'Buyurtmani qadoqlangan deb faqat qadoqlovchi belgilaydi' });
+  }
+  try {
+    const order = await db.get(`
+      SELECT id, order_number, status, discount, paid_amount, courier_delivery_id
+      FROM orders WHERE id = ?
+    `, [req.params.id]);
+    if (!order) return res.status(404).json({ success: false, error: 'Buyurtma topilmadi' });
+    if (order.status !== 'qadoqlayapti') {
+      return res.status(409).json({ success: false, error: 'Faqat qadoqlash navbatidagi buyurtmani yakunlash mumkin' });
+    }
+    const items = await db.all(`
+      SELECT oi.id, oi.item_type, oi.unit_price, oi.quantity, oi.area, c.unit
+      FROM order_items oi
+      JOIN categories c ON c.id = oi.category_id
+      WHERE oi.order_id = ?
+      ORDER BY oi.id
+    `, [order.id]);
+    if (items.some(item => item.unit === 'kv_m' && Number(item.area) <= 0)) {
+      return res.status(409).json({ success: false, error: 'Yuvuvchi gilam o‘lchamlarini saqlamaguncha qadoqlashni yakunlab bo‘lmaydi' });
+    }
+    const prices = req.body.prices;
+    if (!Array.isArray(prices) || prices.length !== items.length || prices.length > 500) {
+      return res.status(400).json({ success: false, error: 'Har bir buyum uchun qadoqlash narxini yuboring' });
+    }
+    const pricesById = new Map();
+    for (const entry of prices) {
+      const id = Number(entry && entry.id);
+      const unitPrice = Number(entry && entry.unit_price);
+      if (!Number.isInteger(id) || !Number.isFinite(unitPrice) ||
+          unitPrice < 0 || unitPrice > 1000000000 || pricesById.has(id)) {
+        return res.status(400).json({ success: false, error: 'Buyum narxi noto‘g‘ri; 0 dan 1 000 000 000 so‘mgacha kiriting' });
+      }
+      pricesById.set(id, unitPrice);
+    }
+    if (items.some(item => !pricesById.has(item.id)) || pricesById.size !== items.length) {
+      return res.status(400).json({ success: false, error: 'Narxlar ro‘yxati buyurtma buyumlariga mos emas' });
+    }
+    let totalArea = 0;
+    let totalAmount = 0;
+    const pricedItems = items.map(item => {
+      const unitPrice = pricesById.get(item.id);
+      const measure = item.unit === 'kv_m' ? Number(item.area) : Number(item.quantity);
+      const subtotal = Math.round(unitPrice * measure);
+      if (!Number.isSafeInteger(subtotal)) {
+        const error = new Error('Buyurtma narxi juda katta');
+        error.statusCode = 400;
+        throw error;
+      }
+      if (item.unit === 'kv_m') totalArea += measure;
+      totalAmount += subtotal;
+      if (!Number.isSafeInteger(totalAmount)) {
+        const error = new Error('Buyurtma narxi juda katta');
+        error.statusCode = 400;
+        throw error;
+      }
+      return { ...item, unit_price: unitPrice, subtotal };
+    });
+    totalArea = Math.round(totalArea * 100) / 100;
+    const finalAmount = Math.max(0, totalAmount - Number(order.discount || 0));
+    if (!Number.isSafeInteger(finalAmount) || finalAmount < Number(order.paid_amount || 0)) {
+      return res.status(400).json({ success: false, error: 'Yakuniy summa oldindan to‘langan summadan kam bo‘lishi mumkin emas' });
+    }
+    const paymentStatus = finalAmount > 0 && Number(order.paid_amount || 0) >= finalAmount
+      ? 'tolandi'
+      : Number(order.paid_amount || 0) > 0
+        ? 'qisman'
+        : 'kutilmoqda';
+    const owners = await db.all("SELECT id FROM users WHERE role = 'owner' AND status = 'active'");
+    const itemSummary = pricedItems.map(item => {
+      const area = Number(item.area) > 0 ? ` — ${Number(item.area).toFixed(2)} m²` : '';
+      return `${item.item_type || ''} (${item.quantity} dona${area})`;
+    }).join(', ');
+    const title = `${order.order_number}: buyurtma qadoqlandi`;
+    const message = `Buyurtma qadoqlandi va barcha dastavchiklar uchun yetkazish ro‘yxatiga chiqarildi. Jami: ${finalAmount.toLocaleString()} so‘m. Buyumlar: ${itemSummary || 'ko‘rsatilmagan'}.`;
+    await db.transaction(async transaction => {
+      for (const item of pricedItems) {
+        await transaction.run(
+          'UPDATE order_items SET unit_price = ?, subtotal = ? WHERE id = ? AND order_id = ?',
+          [item.unit_price, item.subtotal, item.id, order.id]
+        );
+      }
+      const update = await transaction.run(`
+        UPDATE orders
+        SET status = 'qadoqlandi',
+            courier_delivery_id = NULL,
+            total_area = ?,
+            total_amount = ?,
+            final_amount = ?,
+            payment_status = ?
+        WHERE id = ? AND status = 'qadoqlayapti'
+      `, [totalArea, totalAmount, finalAmount, paymentStatus, order.id]);
+      if (update.changes !== 1) {
+        const error = new Error('Buyurtma holati boshqa foydalanuvchi tomonidan o‘zgartirildi. Ro‘yxatni yangilang.');
+        error.statusCode = 409;
+        throw error;
+      }
+      for (const owner of owners) {
+        await transaction.run(`
+          INSERT INTO owner_notifications (user_id, order_id, title, message)
+          VALUES (?, ?, ?, ?)
+        `, [owner.id, order.id, title, message]);
+      }
+    });
+    let telegramResult;
+    try {
+      const telegramMessage = await telegram.formatOrderMessage(order.id, 'status_change');
+      if (!telegramMessage?.text) throw new Error('Telegram xabari tayyorlanmadi');
+      telegramResult = await telegram.sendTelegramMessage(
+        telegramMessage.text,
+        'HTML',
+        telegramMessage.location
+      );
+    } catch (error) {
+      console.error('Qadoqlangan buyurtma Telegram xabari yuborilmadi:', error.message);
+      telegramResult = { success: false, error: error.message };
+    }
+    const packedOrder = await db.get('SELECT courier_delivery_id FROM orders WHERE id = ?', [order.id]);
+    res.json({
+      success: true,
+      status: 'qadoqlandi',
+      total_area: totalArea,
+      total_amount: totalAmount,
+      final_amount: finalAmount,
+      courier_delivery_id: packedOrder.courier_delivery_id,
+      message: 'Buyurtma qadoqlandi va barcha dastavchiklarning yetkazish ro‘yxatiga chiqarildi',
+      telegram: telegramResult,
+      telegram_warning: !telegramResult.success
+        ? `Buyurtma qadoqlandi, lekin Telegram xabari yuborilmadi: ${telegramResult.error}`
+        : telegramResult.simulated
+          ? 'Buyurtma qadoqlandi, lekin Telegram bot yoki guruh sozlanmagani uchun xabar faqat tizim jurnaliga yozildi'
+          : null
+    });
+  } catch (error) {
+    res.status(error.statusCode || 500).json({ success: false, error: error.message });
   }
 });
 
@@ -681,7 +901,8 @@ app.get('/api/stats', async (req, res) => {
       SELECT 
         COUNT(*) as total_orders,
         SUM(CASE WHEN status = 'yangi' THEN 1 ELSE 0 END) as new_orders,
-        SUM(CASE WHEN status IN ('yuvishda', 'quritishda', 'qadoqlayapti') THEN 1 ELSE 0 END) as washing_orders,
+        SUM(CASE WHEN status IN ('yuvishda', 'quritishda', 'olchayapti', 'qadoqlayapti') THEN 1 ELSE 0 END) as washing_orders,
+        SUM(CASE WHEN status IN ('qadoqlandi', 'tayyor') THEN 1 ELSE 0 END) as ready_orders,
         SUM(CASE WHEN status = 'yetkazilmoqda' THEN 1 ELSE 0 END) as delivering_orders,
         SUM(CASE WHEN status = 'yetkazildi' THEN 1 ELSE 0 END) as completed_orders,
         COALESCE(SUM(final_amount), 0) as total_revenue,
@@ -738,7 +959,11 @@ app.get('/api/orders', async (req, res) => {
     }
 
     if (req.user.role === 'courier') {
-      query += ` AND (o.courier_pickup_id = ? OR o.courier_delivery_id = ?)`;
+      query += ` AND (
+        (o.courier_pickup_id = ? AND o.status IN ('yangi', 'qabul_qilindi')) OR
+        (o.status IN ('qadoqlandi', 'tayyor') OR
+         (o.courier_delivery_id = ? AND o.status IN ('yetkazilmoqda', 'yetkazildi')))
+      )`;
       params.push(req.user.id, req.user.id);
     }
 
@@ -1037,28 +1262,19 @@ app.patch('/api/orders/:id/status', async (req, res) => {
         order.status === 'yangi' &&
         status === 'qabul_qilindi' &&
         paid_amount === undefined;
-      const deliveryMeasurementsReady = order.status !== 'qadoqlayapti' || !await db.get(`
-        SELECT oi.id
-        FROM order_items oi
-        JOIN categories c ON c.id = oi.category_id
-        WHERE oi.order_id = ? AND c.unit = 'kv_m'
-          AND (oi.length <= 0 OR oi.width <= 0 OR oi.area <= 0)
-        LIMIT 1
-      `, [orderId]);
-      const canUpdateDelivery =
+      const canStartDelivery = status === 'yetkazilmoqda' &&
+        ['tayyor', 'qadoqlandi'].includes(order.status);
+      const canUpdateDelivery = status === 'yetkazildi' &&
         order.courier_delivery_id === req.user.id &&
-        ['yetkazilmoqda', 'yetkazildi'].includes(status) &&
-        (status !== 'yetkazilmoqda' ||
-          ['tayyor', 'qadoqlayapti'].includes(order.status) && deliveryMeasurementsReady) &&
-        (status !== 'yetkazildi' || order.status === 'yetkazilmoqda');
-      if (!canConfirmPickup && !canUpdateDelivery) {
+        order.status === 'yetkazilmoqda';
+      if (!canConfirmPickup && !canStartDelivery && !canUpdateDelivery) {
         return res.status(403).json({
           success: false,
           error: 'Kuryer faqat o‘zi olgan buyurtmani sexga topshirilgan deb, tayyor buyurtmani esa yetkazish holatiga o‘tkaza oladi'
         });
       }
     }
-    if (!['yangi', 'qabul_qilindi', 'yuvishda', 'quritishda', 'qadoqlayapti', 'tayyor', 'yetkazilmoqda', 'yetkazildi', 'bekor_qilindi'].includes(status)) {
+    if (!['yangi', 'qabul_qilindi', 'yuvishda', 'quritishda', 'olchayapti', 'qadoqlayapti', 'qadoqlandi', 'tayyor', 'yetkazilmoqda', 'yetkazildi', 'bekor_qilindi'].includes(status)) {
       return res.status(400).json({ success: false, error: 'Buyurtma holati noto‘g‘ri' });
     }
 
@@ -1069,6 +1285,7 @@ app.patch('/api/orders/:id/status', async (req, res) => {
 
     let updatedPaid = order.paid_amount;
     let updatedPayStatus = order.payment_status;
+    let paymentTransactionAmount = 0;
 
     if (req.user.role === 'courier' && status === 'yetkazildi' &&
         Number(paid_amount) !== order.final_amount) {
@@ -1084,20 +1301,14 @@ app.patch('/api/orders/:id/status', async (req, res) => {
       else if (updatedPaid > 0) updatedPayStatus = 'qisman';
       else updatedPayStatus = 'kutilmoqda';
 
-      const diff = updatedPaid - order.paid_amount;
-      if (diff > 0) {
-        await db.run(`
-          INSERT INTO transactions (order_id, type, category, amount, payment_method, description, created_by)
-          VALUES (?, 'kirim', 'buyurtma_tolovi', ?, ?, ?, ?)
-        `, [orderId, diff, order.payment_method || 'naqd', `${order.order_number} to'liq/qisman to'lov`, req.user.id]);
-      }
+      paymentTransactionAmount = updatedPaid - order.paid_amount;
     }
 
     let dispatchNotification = null;
     let dispatchMessage = '';
     let ownerNotificationRows = [];
     const isCourierDispatch = req.user.role === 'courier' &&
-      ['tayyor', 'qadoqlayapti'].includes(order.status) && status === 'yetkazilmoqda';
+      ['tayyor', 'qadoqlandi'].includes(order.status) && status === 'yetkazilmoqda';
     if (isCourierDispatch) {
       const [owners, items] = await Promise.all([
         db.all("SELECT id FROM users WHERE role = 'owner' AND status = 'active'"),
@@ -1118,12 +1329,35 @@ app.patch('/api/orders/:id/status', async (req, res) => {
     }
 
     await db.transaction(async transaction => {
-      await transaction.run(`
+      const update = await transaction.run(`
         UPDATE orders
-        SET status = ?, courier_notes = COALESCE(?, courier_notes),
+        SET status = ?,
+            courier_delivery_id = CASE WHEN ? = 1 THEN ? ELSE courier_delivery_id END,
+            courier_notes = COALESCE(?, courier_notes),
             delivered_date = ?, paid_amount = ?, payment_status = ?
-        WHERE id = ?
-      `, [status, courier_notes || null, deliveredDate, updatedPaid, updatedPayStatus, orderId]);
+        WHERE id = ? AND status = ?
+      `, [
+        status,
+        isCourierDispatch ? 1 : 0,
+        req.user.role === 'courier' ? req.user.id : null,
+        courier_notes || null,
+        deliveredDate,
+        updatedPaid,
+        updatedPayStatus,
+        orderId,
+        order.status
+      ]);
+      if (update.changes !== 1) {
+        const error = new Error('Buyurtmani boshqa dastavchik oldi yoki holati o‘zgardi. Ro‘yxatni yangilang.');
+        error.statusCode = 409;
+        throw error;
+      }
+      if (paymentTransactionAmount > 0) {
+        await transaction.run(`
+          INSERT INTO transactions (order_id, type, category, amount, payment_method, description, created_by)
+          VALUES (?, 'kirim', 'buyurtma_tolovi', ?, ?, ?, ?)
+        `, [orderId, paymentTransactionAmount, order.payment_method || 'naqd', `${order.order_number} to'liq/qisman to'lov`, req.user.id]);
+      }
       for (const notification of ownerNotificationRows) {
         await transaction.run(`
           INSERT INTO owner_notifications (user_id, order_id, title, message)
@@ -1150,7 +1384,7 @@ app.patch('/api/orders/:id/status', async (req, res) => {
         : null
     });
   } catch (err) {
-    res.status(500).json({ success: false, error: err.message });
+    res.status(err.statusCode || 500).json({ success: false, error: err.message });
   }
 });
 
@@ -1225,77 +1459,10 @@ app.post('/api/orders/:id/handoff', async (req, res) => {
   if (req.user.role !== 'courier') {
     return res.status(403).json({ success: false, error: 'Buyurtmani topshirish faqat kuryer uchun ruxsat etilgan' });
   }
-  try {
-    const assignment = req.body.assignment;
-    const toCourierId = Number(req.body.to_courier_id);
-    const notes = typeof req.body.notes === 'string' ? req.body.notes.trim() : '';
-    if (!['pickup', 'delivery'].includes(assignment) ||
-        !Number.isInteger(toCourierId) || toCourierId < 1 ||
-        (req.body.notes !== undefined && (typeof req.body.notes !== 'string' || notes.length > 500))) {
-      return res.status(400).json({ success: false, error: 'Topshirish ma’lumotlari noto‘g‘ri' });
-    }
-    if (toCourierId === req.user.id) {
-      return res.status(400).json({ success: false, error: 'Buyurtmani o‘zingizga topshira olmaysiz' });
-    }
-
-    const order = await db.get('SELECT * FROM orders WHERE id = ?', [req.params.id]);
-    if (!order) return res.status(404).json({ success: false, error: 'Buyurtma topilmadi' });
-    const currentCourierId = assignment === 'pickup' ? order.courier_pickup_id : order.courier_delivery_id;
-    const allowedStatuses = assignment === 'pickup'
-      ? ['yangi', 'qabul_qilindi']
-      : ['qabul_qilindi', 'yuvishda', 'quritishda', 'qadoqlayapti', 'tayyor', 'yetkazilmoqda'];
-    if (currentCourierId !== req.user.id || !allowedStatuses.includes(order.status)) {
-      return res.status(403).json({ success: false, error: 'Bu bosqichdagi buyurtmani topshirish huquqingiz yo‘q' });
-    }
-
-    const nextCourier = await db.get(
-      "SELECT id, full_name, telegram_id FROM users WHERE id = ? AND role = 'courier' AND status = 'active'",
-      [toCourierId]
-    );
-    if (!nextCourier) return res.status(400).json({ success: false, error: 'Faol kuryerni tanlang' });
-
-    try {
-      await db.transaction(async transaction => {
-        const column = assignment === 'pickup' ? 'courier_pickup_id' : 'courier_delivery_id';
-        const result = await transaction.run(
-          `UPDATE orders SET ${column} = ? WHERE id = ? AND ${column} = ? AND status = ?`,
-          [toCourierId, order.id, req.user.id, order.status]
-        );
-        if (result.changes !== 1) {
-          const error = new Error('Buyurtma boshqa foydalanuvchi tomonidan o‘zgartirildi; yangilab qayta urinib ko‘ring');
-          error.statusCode = 409;
-          throw error;
-        }
-        await transaction.run(`
-          INSERT INTO courier_handoffs (order_id, assignment, from_courier_id, to_courier_id, notes)
-          VALUES (?, ?, ?, ?, ?)
-        `, [order.id, assignment, req.user.id, toCourierId, notes || null]);
-      });
-    } catch (error) {
-      if (error.statusCode === 409) {
-        return res.status(409).json({ success: false, error: error.message });
-      }
-      throw error;
-    }
-
-    let notifications = [];
-    let notificationWarning = null;
-    try {
-      const fromCourier = {
-        id: req.user.id,
-        full_name: req.user.full_name,
-        telegram_id: (await db.get('SELECT telegram_id FROM users WHERE id = ?', [req.user.id]))?.telegram_id
-      };
-      notifications = await telegram.notifyCourierHandoff(order, assignment, fromCourier, nextCourier, notes);
-    } catch (error) {
-      notificationWarning = error.message;
-      console.error('Buyurtma topshirish Telegram xabari yuborilmadi:', error.message);
-    }
-    const message = `Buyurtma ${nextCourier.full_name} kuryerga topshirildi`;
-    res.json({ success: true, message, notifications, notification_warning: notificationWarning });
-  } catch (error) {
-    res.status(500).json({ success: false, error: error.message });
-  }
+  res.status(410).json({
+    success: false,
+    error: 'Boshqa dastavchikka topshirish o‘chirilgan. Yetkazishga tayyor buyurtmani istalgan dastavchik o‘zi olishi mumkin.'
+  });
 });
 
 // Buyurtmani o'chirish (Faqat Ega admin)
@@ -1310,6 +1477,162 @@ app.delete('/api/orders/:id', async (req, res) => {
     res.json({ success: true, message: "Buyurtma o'chirildi" });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+app.get('/api/payroll/me', async (req, res) => {
+  if (!PAYROLL_ROLES.includes(req.user.role)) {
+    return res.status(403).json({ success: false, error: 'Bu ma’lumot faqat xodimlar uchun' });
+  }
+  try {
+    const month = getTashkentMonth();
+    const range = getPayrollMonthRange(month);
+    const rates = await getPayrollRates();
+    const [revenue, payments] = await Promise.all([
+      db.get(`
+        SELECT COALESCE(SUM(final_amount), 0) AS total
+        FROM orders
+        WHERE status = 'yetkazildi' AND delivered_date >= ? AND delivered_date < ?
+      `, [range.start, range.end]),
+      db.all(`
+        SELECT id, payroll_month, payment_type, amount, description, created_at
+        FROM staff_payments
+        WHERE user_id = ? AND payroll_month = ?
+        ORDER BY id DESC
+      `, [req.user.id, month])
+    ]);
+    const orderRevenue = Number(revenue?.total || 0);
+    const earnedAmount = Math.round(orderRevenue * rates[req.user.role] / 100);
+    const paidAmount = payments.reduce((sum, payment) => sum + Number(payment.amount), 0);
+    res.json({
+      success: true,
+      data: {
+        month,
+        role: req.user.role,
+        role_label: PAYROLL_ROLE_LABELS[req.user.role],
+        rate: rates[req.user.role],
+        order_revenue: orderRevenue,
+        earned_amount: earnedAmount,
+        paid_amount: paidAmount,
+        balance: earnedAmount - paidAmount,
+        payments
+      }
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+app.get('/api/payroll/summary', async (req, res) => {
+  if (req.user.role !== 'owner') {
+    return res.status(403).json({ success: false, error: 'Oylik hisobini faqat egasi ko‘ra oladi' });
+  }
+  try {
+    const month = req.query.month || getTashkentMonth();
+    const range = getPayrollMonthRange(month);
+    if (!range) return res.status(400).json({ success: false, error: 'Oy formati YYYY-MM bo‘lishi kerak' });
+    const [rates, revenue, users, payments] = await Promise.all([
+      getPayrollRates(),
+      db.get(`
+        SELECT COALESCE(SUM(final_amount), 0) AS total
+        FROM orders
+        WHERE status = 'yetkazildi' AND delivered_date >= ? AND delivered_date < ?
+      `, [range.start, range.end]),
+      db.all(`
+        SELECT id, full_name, role FROM users
+        WHERE role IN ('courier', 'washer', 'packager') AND status = 'active'
+        ORDER BY role, full_name
+      `),
+      db.all(`
+        SELECT user_id, COALESCE(SUM(amount), 0) AS total
+        FROM staff_payments
+        WHERE payroll_month = ?
+        GROUP BY user_id
+      `, [month])
+    ]);
+    const orderRevenue = Number(revenue?.total || 0);
+    const paidByUser = new Map(payments.map(payment => [Number(payment.user_id), Number(payment.total)]));
+    const workers = users.map(user => {
+      const earnedAmount = Math.round(orderRevenue * rates[user.role] / 100);
+      const paidAmount = paidByUser.get(Number(user.id)) || 0;
+      return {
+        ...user,
+        role_label: PAYROLL_ROLE_LABELS[user.role],
+        rate: rates[user.role],
+        order_revenue: orderRevenue,
+        earned_amount: earnedAmount,
+        paid_amount: paidAmount,
+        balance: earnedAmount - paidAmount
+      };
+    });
+    res.json({ success: true, data: { month, rates, order_revenue: orderRevenue, workers } });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+app.post('/api/payroll/rates', async (req, res) => {
+  if (req.user.role !== 'owner') {
+    return res.status(403).json({ success: false, error: 'Oylik foizlarini faqat egasi belgilay oladi' });
+  }
+  try {
+    const { rates } = req.body;
+    if (!rates || typeof rates !== 'object' || Array.isArray(rates) ||
+        PAYROLL_ROLES.some(role => typeof rates[role] !== 'number' ||
+          !Number.isFinite(rates[role]) || rates[role] < 0 || rates[role] > 100 ||
+          !Number.isInteger(rates[role] * 100))) {
+      return res.status(400).json({ success: false, error: 'Har bir lavozim foizi 0 dan 100 gacha, ko‘pi bilan 2 kasr xonali bo‘lishi kerak' });
+    }
+    await db.transaction(async transaction => {
+      for (const role of PAYROLL_ROLES) {
+        await transaction.run(`
+          INSERT INTO settings (key, value) VALUES (?, ?)
+          ON CONFLICT(key) DO UPDATE SET value = excluded.value
+        `, [`payroll_rate_${role}`, String(rates[role])]);
+      }
+    });
+    res.json({ success: true, rates });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+app.post('/api/payroll/payments', async (req, res) => {
+  if (req.user.role !== 'owner') {
+    return res.status(403).json({ success: false, error: 'Xodimga to‘lovni faqat egasi qayd eta oladi' });
+  }
+  try {
+    const userId = Number(req.body.user_id);
+    const { month, payment_type: paymentType } = req.body;
+    const amount = Number(req.body.amount);
+    const description = req.body.description === undefined ? '' : req.body.description;
+    if (!Number.isInteger(userId) || userId < 1 || !getPayrollMonthRange(month) ||
+        !['advance', 'salary'].includes(paymentType) ||
+        !Number.isSafeInteger(amount) || amount < 1 || amount > 1000000000000 ||
+        typeof description !== 'string' || description.length > 300) {
+      return res.status(400).json({ success: false, error: 'Xodim, oy, to‘lov turi, summa yoki izoh noto‘g‘ri' });
+    }
+    const user = await db.get(`
+      SELECT id, full_name FROM users
+      WHERE id = ? AND role IN ('courier', 'washer', 'packager') AND status = 'active'
+    `, [userId]);
+    if (!user) return res.status(404).json({ success: false, error: 'Faol xodim topilmadi' });
+    const label = paymentType === 'advance' ? 'Avans' : 'Oylik to‘lovi';
+    const paymentDescription = description.trim() ||
+      `${user.full_name} — ${month} oyi uchun ${label.toLowerCase()}`;
+    await db.transaction(async transaction => {
+      await transaction.run(`
+        INSERT INTO staff_payments (user_id, payroll_month, payment_type, amount, description, created_by)
+        VALUES (?, ?, ?, ?, ?, ?)
+      `, [user.id, month, paymentType, amount, paymentDescription, req.user.id]);
+      await transaction.run(`
+        INSERT INTO transactions (order_id, type, category, amount, payment_method, description, created_by)
+        VALUES (NULL, 'chiqim', 'ishchi_oyligi', ?, 'naqd', ?, ?)
+      `, [amount, `${label}: ${paymentDescription}`, req.user.id]);
+    });
+    res.json({ success: true, message: `${label} saqlandi va oylik qoldig‘idan ayrildi` });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
   }
 });
 
@@ -1395,7 +1718,7 @@ app.post('/api/users', async (req, res) => {
     if (typeof username !== 'string' || !/^[a-zA-Z0-9_.-]{3,40}$/.test(username) ||
         typeof password !== 'string' || password.length < 8 || password.length > 256 ||
         typeof full_name !== 'string' || !full_name.trim() ||
-        !['admin', 'courier', 'washer'].includes(role || 'courier')) {
+        !['admin', 'courier', 'washer', 'packager'].includes(role || 'courier')) {
       return res.status(400).json({ success: false, error: 'Login (3+ belgi), ism, rol va kamida 8 belgili parol talab qilinadi' });
     }
     const insert = await db.run(`

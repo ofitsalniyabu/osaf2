@@ -309,48 +309,6 @@ body {
   transform: translateY(-1px);
 }
 
-.courier-handoff-controls,
-.order-handoff-history {
-  display: grid;
-  gap: 10px;
-  padding: 12px;
-  border: 1px solid rgba(225, 29, 72, 0.25);
-  border-radius: 12px;
-  background: rgba(225, 29, 72, 0.06);
-}
-
-.courier-handoff-row {
-  display: grid;
-  gap: 6px;
-  font-size: 12px;
-  font-weight: 700;
-}
-
-.courier-handoff-row > div {
-  display: flex;
-  gap: 8px;
-}
-
-.courier-handoff-row select {
-  flex: 1;
-  min-width: 0;
-  border: 1px solid var(--border-color);
-  border-radius: 8px;
-  padding: 8px;
-  background: var(--bg-card);
-  color: var(--text-main);
-}
-
-.order-handoff-history p {
-  margin: 0;
-  font-size: 13px;
-}
-
-.order-handoff-history small {
-  display: block;
-  color: var(--text-muted);
-}
-
 /* ================= APP LAYOUT ================= */
 .app-layout {
   display: flex;
@@ -782,6 +740,76 @@ body {
 .col-span-5 { grid-column: span 5; }
 .col-span-4 { grid-column: span 4; }
 
+.payroll-rates-form {
+  display: flex;
+  align-items: end;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin: 16px 0;
+}
+
+.payroll-rates-form label {
+  display: grid;
+  gap: 6px;
+  min-width: 145px;
+  font-weight: 600;
+}
+
+.payroll-month-picker {
+  max-width: 220px;
+  margin: 18px 0 10px;
+}
+
+.payroll-summary-table {
+  min-width: 850px;
+}
+
+.payroll-payment-controls {
+  display: grid;
+  grid-template-columns: 115px 100px minmax(140px, 1fr) auto;
+  gap: 6px;
+  min-width: 430px;
+}
+
+.payroll-payment-controls input,
+.payroll-payment-controls select {
+  min-width: 0;
+  width: 100%;
+}
+
+.payroll-metrics {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 12px;
+  margin-bottom: 20px;
+}
+
+.payroll-metrics > div {
+  display: grid;
+  gap: 6px;
+  padding: 14px;
+  border: 1px solid var(--border-color);
+  border-radius: 9px;
+  background: var(--bg-card-hover);
+}
+
+.payroll-metrics span {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.payroll-metrics strong {
+  font-size: 16px;
+}
+
+.payroll-ledger-title {
+  margin: 8px 0 12px;
+}
+
+.payroll-ledger-table {
+  min-width: 500px;
+}
+
 /* ================= TABLES ================= */
 .table-responsive {
   width: 100%;
@@ -966,6 +994,7 @@ body {
 .status-qabul_qilindi { background: rgba(168, 85, 247, 0.15); color: #c084fc; border: 1px solid rgba(168, 85, 247, 0.3); }
 .status-yuvishda { background: rgba(245, 158, 11, 0.15); color: #fbbf24; border: 1px solid rgba(245, 158, 11, 0.3); }
 .status-quritishda { background: rgba(249, 115, 22, 0.15); color: #fb923c; border: 1px solid rgba(249, 115, 22, 0.3); }
+.status-olchayapti { background: rgba(14, 165, 233, 0.15); color: #38bdf8; border: 1px solid rgba(14, 165, 233, 0.3); }
 .status-qadoqlayapti { background: rgba(236, 72, 153, 0.15); color: #f472b6; border: 1px solid rgba(236, 72, 153, 0.3); }
 .status-tayyor { background: rgba(16, 185, 129, 0.15); color: #34d399; border: 1px solid rgba(16, 185, 129, 0.3); }
 .status-yetkazilmoqda { background: rgba(99, 102, 241, 0.15); color: #818cf8; border: 1px solid rgba(99, 102, 241, 0.3); }
@@ -979,6 +1008,7 @@ body {
 .courier-intake .item-price-cell { display: none; }
 .washer-order-card .card-body { display: flex; flex-direction: column; gap: 14px; }
 .washer-items-list { display: flex; flex-direction: column; gap: 10px; }
+.packager-items-list { margin: 0; padding-left: 20px; }
 .washer-measurement-row {
   display: flex;
   align-items: center;
@@ -990,6 +1020,19 @@ body {
 }
 .washer-measurement-row label { display: flex; align-items: center; gap: 6px; color: var(--text-muted); }
 .washer-measurement-row input { width: 92px; padding: 7px; }
+.packager-price-row { justify-content: space-between; }
+.packager-price-row > div { min-width: 180px; }
+.packager-price-row input { width: 150px; padding: 7px; }
+.packager-total {
+  display: grid;
+  gap: 6px;
+  padding: 12px;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+}
+.packager-total > div { display: flex; justify-content: space-between; gap: 12px; }
+.packager-total > div:last-of-type { font-size: 16px; color: var(--primary); }
+.packager-total small { color: var(--text-muted); text-align: right; }
 .washer-order-actions { display: flex; justify-content: flex-end; }
 .owner-notification { padding: 12px 0; border-bottom: 1px solid var(--border-color); }
 .owner-notification p { margin: 5px 0; }
@@ -1261,11 +1304,6 @@ body {
 html[data-theme="light"] .table-items input,
 html[data-theme="light"] .table-items select {
   border-color: #d8deea;
-  background: #fff;
-  color: #202432;
-}
-
-html[data-theme="light"] .courier-handoff-row select {
   background: #fff;
   color: #202432;
 }

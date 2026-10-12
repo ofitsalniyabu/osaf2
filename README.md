@@ -11,6 +11,7 @@ Mazkur tizim professional gilam yuvish korxonalari uchun maxsus ishlab chiqilgan
   - Korxonaning barcha moliyaviy hisobotlari, tushumlar, qarzdorliklar va kassa holatini to'liq ko'rish.
   - Xizmatlar narxlarini (gilam, adyol, parda, gilamcha) o'zgartirish va yangi kategoriyalar qo'shish.
   - Xodimlar (operatorlar va haydovchi-kuryerlar) ro'yxatini boshqarish.
+  - Dastavchik, yuvuvchi va qadoqlovchi uchun foizlarni belgilash; yetkazilgan buyurtmalar yakuniy summasidan hisoblangan oylik, avans va to'lov qoldig'ini ko'rish.
   - Telegram bot va guruh sozlamalarini nazorat qilish.
   - Dastavchik sexdan tayyor buyurtmani olib ketganda web bildirishnomasi va Telegram xabarini olish.
 - **💼 Admin / Operator:**
@@ -23,10 +24,12 @@ Mazkur tizim professional gilam yuvish korxonalari uchun maxsus ishlab chiqilgan
   - O'ziga biriktirilgan tayyor buyurtmalarni yetkazish ro'yxatida ko'rish.
   - Mijoz telefoniga 1 tugma bilan qo'ng'iroq qilish, manzil va mo'ljalni ko'rish.
   - Holatni tezkor o'zgartirish (*"Yetkazishga chiqdim"*, *"Yetkazdim va pulni oldim"*).
-  - O'ziga biriktirilgan olib ketish yoki yetkazish vazifasini izoh bilan boshqa faol kuryerga topshirish; topshirishlar buyurtma tarixida qayd etiladi.
+  - Yetkazishga tayyor buyurtmalardan istalganini tanlab olish; birinchi bo'lib olgan dastavchik buyurtmaga biriktiriladi.
+  - Joriy oy bo'yicha hisoblangan oylik, berilgan avans/to'lovlar va qolgan summani ko'rish.
 - **🧼 Yuvuvchi:**
   - Sexga topshirilgan buyurtmalarni alohida ish maydonida yuvish, quritish va qadoqlash bosqichlaridan o'tkazish.
   - Qadoqlashda gilamlarning haqiqiy uzunligi/enini va barcha buyumlarning haqiqiy xizmat narxini belgilash; m² va buyurtma summasi avtomatik qayta hisoblanadi.
+  - O'z lavozim foizi bo'yicha oylik va avans/to'lov qoldig'ini ish maydonida ko'rish.
   - Qadoqlash bosqichi boshlanishi bilan buyurtma dastavchikda ko'rinadi. O'lcham va narxni yuvuvchi saqlamaguncha dastavchik yetkazishga chiqa olmaydi; yuvuvchi yetkazish, to'lov, xodimlar va moliya bo'limlariga kira olmaydi.
 
 ---
@@ -93,6 +96,10 @@ Xodim qo'shishda kamida 8 belgili alohida parol kiriting. Parollar bazada scrypt
 - Operator buyurtmalarni ko'radi va boshqaradi, lekin moliyaviy hisobot yoki egaga tegishli sozlamalarga kira olmaydi.
 - Kuryer yangi buyurtma kirita oladi; tizim uni avtomatik o'sha kuryerga biriktiradi. Kuryer buyurtmani faqat "Yangi"dan "Qabul qilindi"ga, ya'ni sexga topshirilganga o'tkazishi mumkin. Chegirma va oldindan to'lovni kuryer belgilay olmaydi.
 - Kuryer faqat o'ziga biriktirilgan buyurtmalarni ko'radi; tayyor buyurtmani yetkazish holatiga o'tkazadi va to'liq to'lov bilan topshirishni tasdiqlaydi.
+- Yuvuvchi buyurtmani yuvish va quritish bosqichlaridan o'tkazadi, gilam o'lchami hamda narxini kiritib qadoqlovchiga topshiradi.
+- Qadoqlovchi uchun alohida ish maydoni mavjud: u qadoqlash navbatini ko'radi va tasdiqlagach buyurtma dastavchikning yetkazish ro'yxatiga o'tadi.
+- Oylik foizi egasi tomonidan lavozim kesimida belgilanadi va shu oyda yetkazilgan buyurtmalarning yakuniy summasiga qo'llanadi. Egasi bergan avans yoki oylik to'lovi xodim balansidan ayriladi va kassada chiqim sifatida saqlanadi.
+- Dastavchik qadoqlash jarayonidagi buyurtmalarni ko'rmaydi; qadoqlovchi tasdiqlaganidan keyin yetkazishni boshlashi mumkin.
 - API har bir so'rovda sessiya va rolni server tomonida tekshiradi. Buyurtmadagi narxlar xizmatlar katalogidan olinadi.
 - Kirish ekrani katta, qayta yangilanadigan, 5 daqiqa amal qiluvchi CAPTCHA tasviridan foydalanadi; kod bir martalik va IP sessiyasiga bog'langan. Muvaffaqiyatsiz parol urinishlari qo'shimcha ravishda 15 daqiqalik cheklov bilan himoyalanadi.
 

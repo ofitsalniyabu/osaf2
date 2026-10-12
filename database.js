@@ -220,6 +220,17 @@ async function initDb() {
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     );
 
+    CREATE TABLE IF NOT EXISTS staff_payments (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL,
+      payroll_month TEXT NOT NULL,
+      payment_type TEXT NOT NULL,
+      amount REAL NOT NULL,
+      description TEXT,
+      created_by INTEGER NOT NULL,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+
     CREATE TABLE IF NOT EXISTS settings (
       key TEXT PRIMARY KEY,
       value TEXT
@@ -308,6 +319,7 @@ async function initDb() {
       CREATE UNIQUE INDEX IF NOT EXISTS users_telegram_id_unique_idx ON users(telegram_id) WHERE telegram_id IS NOT NULL AND telegram_id <> '';
       CREATE INDEX IF NOT EXISTS courier_handoffs_order_id_idx ON courier_handoffs(order_id);
       CREATE INDEX IF NOT EXISTS owner_notifications_user_read_idx ON owner_notifications(user_id, is_read, id);
+      CREATE INDEX IF NOT EXISTS staff_payments_user_month_idx ON staff_payments(user_id, payroll_month, id);
       CREATE INDEX IF NOT EXISTS sessions_user_id_idx ON sessions(user_id);
     `);
   } else {
@@ -338,16 +350,23 @@ async function initDb() {
       CREATE UNIQUE INDEX IF NOT EXISTS users_telegram_id_unique_idx ON users(telegram_id) WHERE telegram_id IS NOT NULL AND telegram_id <> '';
       CREATE INDEX IF NOT EXISTS courier_handoffs_order_id_idx ON courier_handoffs(order_id);
       CREATE INDEX IF NOT EXISTS owner_notifications_user_read_idx ON owner_notifications(user_id, is_read, id);
+      CREATE INDEX IF NOT EXISTS staff_payments_user_month_idx ON staff_payments(user_id, payroll_month, id);
     `);
   }
 
   const checkUsers = await db.get('SELECT count(*) as count FROM users');
   await db.run(`
     UPDATE orders
-    SET courier_delivery_id = courier_pickup_id
+    SET status = 'olchayapti'
     WHERE status = 'qadoqlayapti'
-      AND courier_delivery_id IS NULL
-      AND courier_pickup_id IS NOT NULL
+      AND EXISTS (
+        SELECT 1
+        FROM order_items oi
+        JOIN categories c ON c.id = oi.category_id
+        WHERE oi.order_id = orders.id
+          AND c.unit = 'kv_m'
+          AND (COALESCE(oi.length, 0) <= 0 OR COALESCE(oi.width, 0) <= 0 OR COALESCE(oi.area, 0) <= 0)
+      )
   `);
   const maxOrderNumber = await db.get(
     "SELECT MAX(CAST(REPLACE(order_number, '#GLM-', '') AS INTEGER)) AS max_order_number FROM orders WHERE order_number LIKE '#GLM-%'"
