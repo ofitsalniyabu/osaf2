@@ -154,6 +154,10 @@ test('login page is served without exposing demo credentials', async () => {
   assert.match(baseUrl, /^https:/);
   assert.match(html, /id="loginScreen"/);
   assert.match(html, /id="passwordModal"/);
+  assert.match(html, /id="loginUsername" name="username" autocomplete="username"/);
+  assert.match(html, /id="loginPassword" name="password" autocomplete="current-password"/);
+  assert.match(html, /id="tgBotToken" name="telegram-bot-token" class="secret-masked" autocomplete="off"/);
+  assert.doesNotMatch(html, /id="tgBotToken"[^>]*type="password"/);
   assert.match(html, /<div class="form-row" id="orderCourierAssignmentFields">[\s\S]*?id="orderPickupCourier"/);
   assert.match(html, /id="custPhone" required/);
   assert.match(html, /password-visibility-toggle/);
@@ -175,7 +179,10 @@ test('login page is served without exposing demo credentials', async () => {
   assert.match(appScriptText, /Qo‘shimcha izoh/);
   assert.match(appScriptText, /customerPhoneLinks/);
   assert.match(appScriptText, /Yetkazishga chiqish/);
-  assert.match(appScriptText, /Boshlang‘ich narxlar administrator belgilagan tarifdan olindi/);
+  assert.match(appScriptText, /Yetkazildi va to‘lov olindi/);
+  assert.match(appScriptText, /if \(currentUser\?\.role === 'courier'\) \{\s*metricSpan\.innerText = '1 dona'/);
+  assert.match(appScriptText, /Kilogramm tarifi administrator tomonidan belgilanadi/);
+  assert.match(appScriptText, /Admin narxi \/ kg/);
   assert.match(appScriptText, /previewPackagerOrderTotal/);
   assert.match(appScriptText, /\/api\/payroll\/me/);
   assert.match(html, /id="tab-washer-mode"/);
@@ -896,6 +903,113 @@ test('owner can configure the order-number starting value from admin settings', 
   });
   assert.equal(created.status, 200);
   assert.equal((await created.json()).orderNumber, '#GLM-1234');
+});
+
+test('curtain orders are priced by automatically recorded kilogram weight', async () => {
+  const categoriesResponse = await request('/api/categories', { cookie: ownerCookie });
+  assert.equal(categoriesResponse.status, 200);
+  const categories = (await categoriesResponse.json()).data;
+  const curtain = categories.find(category => category.name === 'Parda va Tyul');
+  assert.ok(curtain);
+  assert.equal(curtain.unit, 'kg');
+  const updatedCurtain = await request(`/api/categories/${curtain.id}`, {
+    cookie: ownerCookie,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ ...curtain, price_per_unit: 14000 })
+  });
+  assert.equal(updatedCurtain.status, 200);
+
+  const courier = await login('kuryer1', credentials.courier);
+  const courierSession = courier.cookie.split(';')[0];
+  const created = await request('/api/orders', {
+    cookie: courierSession,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      customer_name: 'Parda buyurtmasi',
+      customer_phone: '+998901234567',
+      customer_address: 'Parda test manzili',
+      items: [{ category_id: curtain.id, length: 12, width: 8, unit_price: 1 }]
+    })
+  });
+  assert.equal(created.status, 200);
+  const createdOrder = await created.json();
+  assert.equal(createdOrder.orderNumber, '#GLM-1235');
+  const item = (await (await request(`/api/orders/${createdOrder.orderId}`, {
+    cookie: ownerCookie
+  })).json()).data.items[0];
+  assert.equal(item.length, 0);
+  assert.equal(item.width, 0);
+  assert.equal(item.weight_kg, 0);
+  assert.equal(item.barcode, `${createdOrder.orderNumber}-1`);
+
+  const received = await request(`/api/orders/${createdOrder.orderId}/status`, {
+    cookie: courierSession,
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ status: 'qabul_qilindi' })
+  });
+  assert.equal(received.status, 200);
+  const washer = await login('washer-test', 'washer-password-123');
+  const washerCookie = washer.cookie.split(';')[0];
+  for (const status of ['yuvishda', 'quritishda', 'olchayapti']) {
+    const advanced = await request(`/api/washer/orders/${createdOrder.orderId}/status`, {
+      cookie: washerCookie,
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ status })
+    });
+    assert.equal(advanced.status, 200);
+  }
+
+  const invalidWeight = await request(`/api/washer/orders/${createdOrder.orderId}/measurements`, {
+    cookie: washerCookie,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ measurements: [{ id: item.id, length: 0, width: 0, unit_price: 12000 }] })
+  });
+  assert.equal(invalidWeight.status, 400);
+  const measured = await request(`/api/washer/orders/${createdOrder.orderId}/measurements`, {
+    cookie: washerCookie,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      measurements: [{ id: item.id, length: 0, width: 0, weight_kg: 2.5, unit_price: 12000 }]
+    })
+  });
+  assert.equal(measured.status, 200);
+  const measuredData = await measured.json();
+  assert.equal(measuredData.total_weight_kg, 2.5);
+  assert.equal(measuredData.total_amount, 35000);
+
+  const readyOrder = (await (await request(`/api/orders/${createdOrder.orderId}`, {
+    cookie: ownerCookie
+  })).json()).data;
+  assert.equal(readyOrder.items[0].weight_kg, 2.5);
+  assert.equal(readyOrder.items[0].unit_price, 14000);
+  assert.equal(readyOrder.items[0].subtotal, 35000);
+  assert.equal(readyOrder.total_amount, 35000);
+
+  const packager = await login('packager-test', 'packager-password-123');
+  const packagerCookie = packager.cookie.split(';')[0];
+  const packaging = (await (await request('/api/packager/orders', {
+    cookie: packagerCookie
+  })).json()).data.find(order => order.id === createdOrder.orderId);
+  assert.ok(packaging);
+  assert.equal(packaging.items[0].weight_kg, 2.5);
+  const packed = await request(`/api/packager/orders/${createdOrder.orderId}/packed`, {
+    cookie: packagerCookie,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ prices: [{ id: item.id, unit_price: 1 }] })
+  });
+  assert.equal(packed.status, 200);
+  assert.equal((await packed.json()).total_amount, 35000);
+  const packedOrder = (await (await request(`/api/orders/${createdOrder.orderId}`, {
+    cookie: ownerCookie
+  })).json()).data;
+  assert.equal(packedOrder.items[0].unit_price, 14000);
 });
 
 test('logout invalidates the server-side session', async () => {

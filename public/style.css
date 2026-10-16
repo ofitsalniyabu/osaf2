@@ -239,6 +239,10 @@ body {
   padding-right: 48px !important;
 }
 
+.secret-masked:not(.secret-visible) {
+  -webkit-text-security: disc;
+}
+
 .input-icon-wrap input[type="password"],
 .input-icon-wrap input[type="text"] {
   padding-right: 48px !important;
@@ -2121,9 +2125,7 @@ html[data-theme="light"] .items-table-wrapper::-webkit-scrollbar-track {
   position: relative;
   transition:
     transform 200ms cubic-bezier(0.2, 0.8, 0.2, 1),
-    box-shadow 200ms ease,
-    border-color 180ms ease,
-    background-color 180ms ease;
+    border-color 180ms ease;
 }
 
 .stat-card::after,

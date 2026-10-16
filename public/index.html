@@ -31,14 +31,14 @@
           <label>Foydalanuvchi logini (username):</label>
           <div class="input-icon-wrap">
             <i class="fa-solid fa-user"></i>
-            <input type="text" id="loginUsername" required placeholder="Masalan: ega, operator, kuryer1">
+            <input type="text" id="loginUsername" name="username" autocomplete="username" required placeholder="Masalan: ega, operator, kuryer1">
           </div>
         </div>
         <div class="form-group">
           <label>Parol:</label>
           <div class="input-icon-wrap">
             <i class="fa-solid fa-lock"></i>
-            <input type="password" id="loginPassword" required placeholder="Parol">
+            <input type="password" id="loginPassword" name="password" autocomplete="current-password" required placeholder="Parol">
             <button type="button" class="password-visibility-toggle" onclick="togglePasswordVisibility('loginPassword', this)" aria-label="Parolni ko‘rsatish" title="Parolni ko‘rsatish">
               <i class="fa-solid fa-eye" aria-hidden="true"></i>
             </button>
@@ -505,7 +505,7 @@
                             <th>Turi / Kategoriya</th>
                             <th class="item-dimension-heading">Uzunlik (m)</th>
                             <th class="item-dimension-heading">Eni (m)</th>
-                            <th>Maydon (m²) / Soni</th>
+                            <th>Maydon (m²) / Og‘irlik (kg) / Soni</th>
                             <th class="item-price-heading">Admin Narxi</th>
                             <th>Jami Summa</th>
                             <th>Izoh / Belgi</th>
@@ -677,11 +677,11 @@
                 </div>
                 <div class="form-group">
                   <label id="quickCalcQuantityLabel">Gilamlar soni</label>
-                  <input type="number" id="quickCalcQty" value="1" min="1" oninput="runQuickCalc()">
+                  <input type="number" id="quickCalcQty" value="1" min="1" step="1" oninput="runQuickCalc()">
                 </div>
                 <div class="quick-calc-result">
-                  <div id="quickCalcSingleAreaRow" class="res-item">1 ta gilam maydoni: <b id="quickResSingleArea">3.38 m²</b></div>
-                  <div class="res-item">Jami maydon: <b id="quickResArea">3.38 m²</b></div>
+                  <div id="quickCalcSingleAreaRow" class="res-item"><span id="quickCalcSingleLabel">1 ta gilam maydoni:</span> <b id="quickResSingleArea">3.38 m²</b></div>
+                  <div class="res-item"><span id="quickCalcTotalLabel">Jami maydon:</span> <b id="quickResArea">3.38 m²</b></div>
                   <div class="res-item"><span id="quickResUnitPriceLabel">1 m² uchun admin narxi:</span> <b id="quickResUnitPrice">15 000 so'm</b></div>
                   <div class="res-total">JAMI HISOB: <span id="quickResTotal">50 700 so'm</span></div>
                 </div>
@@ -817,11 +817,11 @@
                   </ol>
                   <p><b>Eslatma:</b> Yangi deploydan keyin webhookni shu sahifadagi “Saqlash va botni ulash” tugmasi bilan yangilang. Telegram ID olish uchun ulangan botga <code>/start</code> yuboring.</p>
                 </div>
-                <form id="tgSettingsForm" onsubmit="saveTgSettings(event)">
+                <form id="tgSettingsForm" autocomplete="off" onsubmit="saveTgSettings(event)">
                   <div class="form-group">
                     <label>1. Telegram bot tokeni (BotFather bergan):</label>
                     <div class="password-input-wrap">
-                      <input type="password" id="tgBotToken" autocomplete="new-password" placeholder="BotFather bergan token">
+                      <input type="text" id="tgBotToken" name="telegram-bot-token" class="secret-masked" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="BotFather bergan token">
                       <button type="button" class="password-visibility-toggle" onclick="togglePasswordVisibility('tgBotToken', this)" aria-label="Tokenni ko‘rsatish" title="Tokenni ko‘rsatish">
                         <i class="fa-solid fa-eye" aria-hidden="true"></i>
                       </button>
@@ -945,6 +945,7 @@
             <label>O'lchov birligi</label>
             <select id="newCatUnit">
               <option value="kv_m">Kvadrat metr (m²)</option>
+              <option value="kg">Kilogram (kg)</option>
               <option value="dona">Dona hisobida</option>
             </select>
           </div>

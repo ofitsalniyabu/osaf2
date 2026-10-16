@@ -201,6 +201,7 @@ async function initDb() {
       length REAL DEFAULT 0,
       width REAL DEFAULT 0,
       area REAL DEFAULT 0,
+      weight_kg REAL DEFAULT 0,
       quantity INTEGER DEFAULT 1,
       unit_price REAL NOT NULL,
       subtotal REAL NOT NULL,
@@ -310,6 +311,7 @@ async function initDb() {
       ALTER TABLE orders ADD COLUMN IF NOT EXISTS longitude REAL;
       ALTER TABLE orders ADD COLUMN IF NOT EXISTS location_address TEXT;
       ALTER TABLE orders ADD COLUMN IF NOT EXISTS defect_tags TEXT;
+      ALTER TABLE order_items ADD COLUMN IF NOT EXISTS weight_kg REAL DEFAULT 0;
       CREATE UNIQUE INDEX IF NOT EXISTS categories_name_unique_idx ON categories(name);
       CREATE INDEX IF NOT EXISTS sessions_user_id_idx ON sessions(user_id);
       CREATE INDEX IF NOT EXISTS sessions_expires_at_idx ON sessions(expires_at);
@@ -343,6 +345,10 @@ async function initDb() {
     const existingSessionColumns = new Set(sessionColumns.map(column => column.name));
     if (!existingSessionColumns.has('user_agent')) await db.run('ALTER TABLE sessions ADD COLUMN user_agent TEXT');
     if (!existingSessionColumns.has('ip_address')) await db.run('ALTER TABLE sessions ADD COLUMN ip_address TEXT');
+    const orderItemColumns = await db.all('PRAGMA table_info(order_items)');
+    if (!orderItemColumns.some(column => column.name === 'weight_kg')) {
+      await db.run('ALTER TABLE order_items ADD COLUMN weight_kg REAL DEFAULT 0');
+    }
     await db.exec(`
       CREATE UNIQUE INDEX IF NOT EXISTS categories_name_unique_idx ON categories(name);
       CREATE INDEX IF NOT EXISTS sessions_user_id_idx ON sessions(user_id);
@@ -356,6 +362,10 @@ async function initDb() {
 
   const checkUsers = await db.get('SELECT count(*) as count FROM users');
   await db.run(`
+    UPDATE categories SET unit = 'kg'
+    WHERE name = 'Parda va Tyul' AND unit = 'kv_m'
+  `);
+  await db.run(`
     UPDATE orders
     SET status = 'olchayapti'
     WHERE status = 'qadoqlayapti'
@@ -366,6 +376,17 @@ async function initDb() {
         WHERE oi.order_id = orders.id
           AND c.unit = 'kv_m'
           AND (COALESCE(oi.length, 0) <= 0 OR COALESCE(oi.width, 0) <= 0 OR COALESCE(oi.area, 0) <= 0)
+      )
+      OR (
+        status = 'qadoqlayapti'
+        AND EXISTS (
+          SELECT 1
+          FROM order_items oi
+          JOIN categories c ON c.id = oi.category_id
+          WHERE oi.order_id = orders.id
+            AND c.unit = 'kg'
+            AND COALESCE(oi.weight_kg, 0) <= 0
+        )
       )
   `);
   const maxOrderNumber = await db.get(
@@ -407,7 +428,7 @@ async function initDb() {
       ['Adyol (1 kishilik)', 'dona', 35000, 'Dona hisobida chuqur antibakterial tozalash', '🛏️'],
       ['Adyol (2 kishilik / Og\'ir)', 'dona', 45000, 'Yumshoq parvarish va quritish', '🛋️'],
       ['Gilamcha (Yo\'lakcha / Oshxona)', 'dona', 20000, 'Kichik o\'lchamdagi gilamcha va oyoq osti', '🚪'],
-      ['Parda va Tyul', 'kv_m', 12000, 'Dazmollash va nozik tozalash', '🪟'],
+      ['Parda va Tyul', 'kg', 12000, 'Kilogram hisobida yuvish va dazmollash', '🪟'],
       ['Yostiq tozalash', 'dona', 25000, 'Par tozalash va yangi g\'ilof', '🪶']
     ];
     for (const cat of cats) {
@@ -533,7 +554,7 @@ async function initDb() {
       ['Adyol (1 kishilik)', 'dona', 35000, 'Dona hisobida chuqur antibakterial tozalash', '🛏️'],
       ['Adyol (2 kishilik / Og\'ir)', 'dona', 45000, 'Yumshoq parvarish va quritish', '🛋️'],
       ['Gilamcha (Yo\'lakcha / Oshxona)', 'dona', 20000, 'Kichik o\'lchamdagi gilamcha va oyoq osti', '🚪'],
-      ['Parda va Tyul', 'kv_m', 12000, 'Dazmollash va nozik tozalash', '🪟'],
+      ['Parda va Tyul', 'kg', 12000, 'Kilogram hisobida yuvish va dazmollash', '🪟'],
       ['Yostiq tozalash', 'dona', 25000, 'Par tozalash va yangi g\'ilof', '🪶']
     ];
     for (const category of categories) {

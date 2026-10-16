@@ -487,8 +487,9 @@ app.get('/api/washer/orders', async (req, res) => {
     const data = await Promise.all(orders.map(async order => ({
       ...order,
       items: await db.all(`
-        SELECT oi.id, oi.item_type, oi.length, oi.width, oi.area, oi.quantity, oi.notes,
-          c.unit
+        SELECT oi.id, oi.item_type, oi.length, oi.width, oi.area, oi.weight_kg,
+          oi.quantity, oi.unit_price, oi.notes,
+          c.unit, c.price_per_unit AS admin_price
         FROM order_items oi
         JOIN categories c ON c.id = oi.category_id
         WHERE oi.order_id = ?
@@ -540,7 +541,8 @@ app.post('/api/washer/orders/:id/measurements', async (req, res) => {
     }
 
     const items = await db.all(`
-      SELECT oi.id, oi.order_id, oi.unit_price, oi.subtotal, oi.quantity, oi.area, c.unit
+      SELECT oi.id, oi.order_id, oi.unit_price, oi.subtotal, oi.quantity, oi.area, oi.weight_kg,
+        c.unit, c.price_per_unit AS admin_price
       FROM order_items oi
       JOIN categories c ON c.id = oi.category_id
       WHERE oi.order_id = ?
@@ -550,26 +552,39 @@ app.post('/api/washer/orders/:id/measurements', async (req, res) => {
       return res.status(400).json({ success: false, error: 'Har bir buyum uchun o‘lcham va narxni yuboring' });
     }
 
+    const itemsById = new Map(items.map(item => [Number(item.id), item]));
     const byId = new Map();
     for (const measurement of measurements) {
       const id = Number(measurement && measurement.id);
       const length = Number(measurement && measurement.length);
       const width = Number(measurement && measurement.width);
-      const unitPrice = Number(measurement && measurement.unit_price);
+      const weightKg = Number(measurement && measurement.weight_kg || 0);
+      const item = itemsById.get(id);
+      const submittedUnitPrice = Number(measurement && measurement.unit_price);
+      const unitPrice = item?.unit === 'kg'
+        ? Number(item.admin_price)
+        : submittedUnitPrice;
       if (!Number.isInteger(id) || !Number.isFinite(length) || !Number.isFinite(width) ||
-          !Number.isFinite(unitPrice) || unitPrice < 0 || unitPrice > 1000000000 ||
+          !Number.isFinite(weightKg) || !Number.isFinite(unitPrice) || unitPrice < 0 || unitPrice > 1000000000 ||
           length < 0 || width < 0 || length > 100 || width > 100 || byId.has(id)) {
         return res.status(400).json({ success: false, error: 'O‘lcham yoki narx noto‘g‘ri; narx manfiy, o‘lcham 100 metrdan katta bo‘lmasin' });
       }
-      byId.set(id, { length, width, unit_price: unitPrice });
+      if (weightKg < 0 || weightKg > 100000) {
+        return res.status(400).json({ success: false, error: 'Og‘irlik 0 dan 100 000 kg gacha bo‘lishi kerak' });
+      }
+      byId.set(id, { length, width, weight_kg: weightKg, unit_price: unitPrice });
     }
     if (items.some(item => !byId.has(item.id) ||
         (item.unit === 'kv_m' && (byId.get(item.id).length <= 0 || byId.get(item.id).width <= 0)) ||
-        (item.unit !== 'kv_m' && (byId.get(item.id).length !== 0 || byId.get(item.id).width !== 0)))) {
-      return res.status(400).json({ success: false, error: 'Gilamlarning uzunligi/enini va har bir buyum narxini kiriting' });
+        (item.unit === 'kg' && (byId.get(item.id).weight_kg <= 0 ||
+          byId.get(item.id).length !== 0 || byId.get(item.id).width !== 0)) ||
+        (item.unit !== 'kv_m' && (byId.get(item.id).length !== 0 || byId.get(item.id).width !== 0)) ||
+        (item.unit !== 'kg' && byId.get(item.id).weight_kg !== 0))) {
+      return res.status(400).json({ success: false, error: 'Gilam o‘lchami, parda og‘irligi yoki buyum narxi noto‘g‘ri' });
     }
 
     let totalArea = 0;
+    let totalWeightKg = 0;
     let totalAmount = 0;
     await db.transaction(async transaction => {
       for (const item of items) {
@@ -579,25 +594,30 @@ app.post('/api/washer/orders/:id/measurements', async (req, res) => {
             ? Math.round(measurement.length * measurement.width * Number(item.quantity || 1) * 100) / 100
             : 0
           : Number(item.area || 0);
+        const weightKg = item.unit === 'kg' ? measurement.weight_kg : 0;
         const subtotal = measurement
-          ? Math.round(measurement.unit_price * (item.unit === 'kv_m' ? area : Number(item.quantity || 1)))
+          ? Math.round(measurement.unit_price * (
+            item.unit === 'kv_m' ? area : item.unit === 'kg' ? weightKg : Number(item.quantity || 1)
+          ))
           : Number(item.subtotal);
         if (!Number.isFinite(area) || !Number.isSafeInteger(subtotal) || subtotal < 0) {
           throw new Error('O‘lcham bo‘yicha summa juda katta');
         }
         if (measurement) {
           await transaction.run(`
-            UPDATE order_items SET length = ?, width = ?, area = ?, unit_price = ?, subtotal = ?
+            UPDATE order_items SET length = ?, width = ?, area = ?, weight_kg = ?, unit_price = ?, subtotal = ?
             WHERE id = ? AND order_id = ?
-          `, [measurement.length, measurement.width, area, measurement.unit_price, subtotal, item.id, order.id]);
+          `, [measurement.length, measurement.width, area, weightKg, measurement.unit_price, subtotal, item.id, order.id]);
         }
         if (item.unit === 'kv_m') totalArea += area;
+        if (item.unit === 'kg') totalWeightKg += weightKg;
         totalAmount += subtotal;
-        if (!Number.isFinite(totalArea) || !Number.isSafeInteger(totalAmount)) {
+        if (!Number.isFinite(totalArea) || !Number.isFinite(totalWeightKg) || !Number.isSafeInteger(totalAmount)) {
           throw new Error('Buyurtma o‘lchami yoki umumiy narxi juda katta');
         }
       }
       totalArea = Math.round(totalArea * 100) / 100;
+      totalWeightKg = Math.round(totalWeightKg * 100) / 100;
       totalAmount = Math.round(totalAmount * 100) / 100;
       const finalAmount = Math.max(0, totalAmount - Number(order.discount || 0));
       if (finalAmount < Number(order.paid_amount || 0)) {
@@ -623,6 +643,7 @@ app.post('/api/washer/orders/:id/measurements', async (req, res) => {
       status: 'qadoqlayapti',
       courier_delivery_id: readyOrder.courier_delivery_id,
       total_area: totalArea,
+      total_weight_kg: totalWeightKg,
       total_amount: totalAmount
     });
   } catch (error) {
@@ -652,7 +673,7 @@ app.get('/api/packager/orders', async (req, res) => {
     const data = await Promise.all(orders.map(async order => ({
       ...order,
       items: await db.all(`
-        SELECT oi.id, oi.category_id, oi.item_type, oi.length, oi.width, oi.area,
+        SELECT oi.id, oi.category_id, oi.item_type, oi.length, oi.width, oi.area, oi.weight_kg,
           oi.quantity, oi.notes, oi.unit_price, oi.subtotal,
           c.unit, c.price_per_unit AS admin_price
         FROM order_items oi
@@ -681,13 +702,17 @@ app.post('/api/packager/orders/:id/packed', async (req, res) => {
       return res.status(409).json({ success: false, error: 'Faqat qadoqlash navbatidagi buyurtmani yakunlash mumkin' });
     }
     const items = await db.all(`
-      SELECT oi.id, oi.item_type, oi.unit_price, oi.quantity, oi.area, c.unit
+      SELECT oi.id, oi.item_type, oi.unit_price, oi.quantity, oi.area, oi.weight_kg,
+        c.unit, c.price_per_unit AS admin_price
       FROM order_items oi
       JOIN categories c ON c.id = oi.category_id
       WHERE oi.order_id = ?
       ORDER BY oi.id
     `, [order.id]);
-    if (items.some(item => item.unit === 'kv_m' && Number(item.area) <= 0)) {
+    if (items.some(item =>
+      (item.unit === 'kv_m' && Number(item.area) <= 0) ||
+      (item.unit === 'kg' && Number(item.weight_kg) <= 0)
+    )) {
       return res.status(409).json({ success: false, error: 'Yuvuvchi gilam o‘lchamlarini saqlamaguncha qadoqlashni yakunlab bo‘lmaydi' });
     }
     const prices = req.body.prices;
@@ -710,8 +735,12 @@ app.post('/api/packager/orders/:id/packed', async (req, res) => {
     let totalArea = 0;
     let totalAmount = 0;
     const pricedItems = items.map(item => {
-      const unitPrice = pricesById.get(item.id);
-      const measure = item.unit === 'kv_m' ? Number(item.area) : Number(item.quantity);
+      const unitPrice = item.unit === 'kg'
+        ? Number(item.admin_price)
+        : pricesById.get(item.id);
+      const measure = item.unit === 'kv_m'
+        ? Number(item.area)
+        : item.unit === 'kg' ? Number(item.weight_kg) : Number(item.quantity);
       const subtotal = Math.round(unitPrice * measure);
       if (!Number.isSafeInteger(subtotal)) {
         const error = new Error('Buyurtma narxi juda katta');
@@ -740,7 +769,10 @@ app.post('/api/packager/orders/:id/packed', async (req, res) => {
     const owners = await db.all("SELECT id FROM users WHERE role = 'owner' AND status = 'active'");
     const itemSummary = pricedItems.map(item => {
       const area = Number(item.area) > 0 ? ` — ${Number(item.area).toFixed(2)} m²` : '';
-      return `${item.item_type || ''} (${item.quantity} dona${area})`;
+      const measure = item.unit === 'kg'
+        ? `${Number(item.weight_kg).toFixed(2)} kg`
+        : item.unit === 'kv_m' ? `${item.quantity} dona${area}` : `${item.quantity} dona`;
+      return `${item.item_type || ''} (${measure})`;
     }).join(', ');
     const title = `${order.order_number}: buyurtma qadoqlandi`;
     const message = `Buyurtma qadoqlandi va barcha dastavchiklar uchun yetkazish ro‘yxatiga chiqarildi. Jami: ${finalAmount.toLocaleString()} so‘m. Buyumlar: ${itemSummary || 'ko‘rsatilmagan'}.`;
@@ -978,10 +1010,17 @@ app.get('/api/orders', async (req, res) => {
 
     // Har bir buyurtmaning itemlarini ham yuklash
     const enriched = await Promise.all(orders.map(async ord => {
-      const items = await db.all('SELECT * FROM order_items WHERE order_id = ?', [ord.id]);
+      const items = await db.all(`
+        SELECT oi.*, c.unit
+        FROM order_items oi
+        JOIN categories c ON c.id = oi.category_id
+        WHERE oi.order_id = ?
+      `, [ord.id]);
+      const total_weight_kg = items.reduce((total, item) => total + Number(item.weight_kg || 0), 0);
       if (req.user.role === 'courier') delete ord.admin_notes;
       return {
         ...ord,
+        total_weight_kg,
         items
       };
     }));
@@ -1012,7 +1051,12 @@ app.get('/api/orders/:id', async (req, res) => {
     }
     if (req.user.role === 'courier') delete order.admin_notes;
 
-    const items = await db.all('SELECT * FROM order_items WHERE order_id = ?', [order.id]);
+    const items = await db.all(`
+      SELECT oi.*, c.unit
+      FROM order_items oi
+      JOIN categories c ON c.id = oi.category_id
+      WHERE oi.order_id = ?
+    `, [order.id]);
     const handoffs = await db.all(`
       SELECT h.assignment, h.notes, h.created_at,
         u1.full_name AS from_courier_name, u2.full_name AS to_courier_name
@@ -1101,7 +1145,7 @@ app.post('/api/orders', async (req, res) => {
         subtotal = Math.round(area * price);
         totalArea += area;
       } else {
-        subtotal = req.user.role === 'courier' && category.unit === 'kv_m'
+        subtotal = category.unit === 'kg' || (req.user.role === 'courier' && category.unit === 'kv_m')
           ? 0
           : Math.round(qty * price);
       }
@@ -1120,6 +1164,7 @@ app.post('/api/orders', async (req, res) => {
         length: len,
         width: wid,
         area,
+        weight_kg: 0,
         quantity: qty,
         unit_price: price,
         subtotal,
@@ -1202,11 +1247,11 @@ app.post('/api/orders', async (req, res) => {
         const barcode = `${orderNumber}-${idx + 1}`;
         await transaction.run(`
           INSERT INTO order_items (
-            order_id, category_id, item_type, barcode, length, width, area, quantity, unit_price, subtotal, notes
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            order_id, category_id, item_type, barcode, length, width, area, weight_kg, quantity, unit_price, subtotal, notes
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `, [
           orderId, item.category_id, item.item_type, barcode,
-          item.length, item.width, item.area, item.quantity, item.unit_price, item.subtotal, item.notes || ''
+          item.length, item.width, item.area, item.weight_kg, item.quantity, item.unit_price, item.subtotal, item.notes || ''
         ]);
       }
 
@@ -1653,7 +1698,7 @@ app.post('/api/categories', async (req, res) => {
   try {
     const { name, unit, price_per_unit, description, icon } = req.body;
     if (typeof name !== 'string' || !name.trim() ||
-        !['kv_m', 'dona'].includes(unit) ||
+        !['kv_m', 'dona', 'kg'].includes(unit) ||
         !Number.isFinite(Number(price_per_unit)) || Number(price_per_unit) < 0) {
       return res.status(400).json({ success: false, error: 'Xizmat nomi, birligi yoki narxi noto‘g‘ri' });
     }
@@ -1674,7 +1719,7 @@ app.put('/api/categories/:id', async (req, res) => {
   try {
     const { name, unit, price_per_unit, description, icon } = req.body;
     if (typeof name !== 'string' || !name.trim() ||
-        !['kv_m', 'dona'].includes(unit) ||
+        !['kv_m', 'dona', 'kg'].includes(unit) ||
         !Number.isFinite(Number(price_per_unit)) || Number(price_per_unit) < 0) {
       return res.status(400).json({ success: false, error: 'Xizmat nomi, birligi yoki narxi noto‘g‘ri' });
     }

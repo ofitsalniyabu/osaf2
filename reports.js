@@ -100,13 +100,16 @@ async function generateOrdersExcel(filter = {}) {
       oi.length,
       oi.width,
       oi.area,
+      oi.weight_kg,
       oi.quantity,
+      cat.unit,
       oi.unit_price,
       oi.subtotal,
       oi.notes
     FROM order_items oi
     JOIN orders o ON oi.order_id = o.id
     JOIN customers c ON o.customer_id = c.id
+    JOIN categories cat ON cat.id = oi.category_id
     ${orderConditions.length ? `WHERE ${orderConditions.map(condition => condition.replace(/\bo\./g, 'o.')).join(' AND ')}` : ''}
     ORDER BY oi.id DESC
   `, orderParams);
@@ -119,6 +122,7 @@ async function generateOrdersExcel(filter = {}) {
     ['Uzunlik (m)', 'length', 12],
     ['Eni (m)', 'width', 12],
     ['Maydon (m²)', 'area', 12],
+    ['Og‘irlik (kg)', 'weightKg', 14],
     ['Dona soni', 'quantity', 10],
     ["Birlik narxi (so'm)", 'unitPrice', 16],
     ["Jami (so'm)", 'total', 16],
@@ -131,6 +135,7 @@ async function generateOrdersExcel(filter = {}) {
     length: item.length || '-',
     width: item.width || '-',
     area: item.area || '-',
+    weightKg: item.weight_kg || '-',
     quantity: item.quantity,
     unitPrice: item.unit_price,
     total: item.subtotal,
@@ -211,7 +216,12 @@ async function generateOrderDocx(orderId) {
 
   if (!order) throw new Error("Buyurtma topilmadi");
 
-  const items = await db.all('SELECT * FROM order_items WHERE order_id = ?', [orderId]);
+  const items = await db.all(`
+    SELECT oi.*, c.unit
+    FROM order_items oi
+    JOIN categories c ON c.id = oi.category_id
+    WHERE oi.order_id = ?
+  `, [orderId]);
 
   const tableRows = [
     new TableRow({
@@ -219,7 +229,7 @@ async function generateOrderDocx(orderId) {
         new TableCell({ children: [new Paragraph({ children: [new TextRun({ text: "№", bold: true })] })] }),
         new TableCell({ children: [new Paragraph({ children: [new TextRun({ text: "Buyum turi", bold: true })] })] }),
         new TableCell({ children: [new Paragraph({ children: [new TextRun({ text: "O'lchamlari (m)", bold: true })] })] }),
-        new TableCell({ children: [new Paragraph({ children: [new TextRun({ text: "Maydon / Dona", bold: true })] })] }),
+        new TableCell({ children: [new Paragraph({ children: [new TextRun({ text: "Maydon / Og'irlik / Dona", bold: true })] })] }),
         new TableCell({ children: [new Paragraph({ children: [new TextRun({ text: "Narxi (so'm)", bold: true })] })] }),
         new TableCell({ children: [new Paragraph({ children: [new TextRun({ text: "Jami (so'm)", bold: true })] })] }),
       ]
@@ -228,7 +238,9 @@ async function generateOrderDocx(orderId) {
 
   items.forEach((item, index) => {
     const sizeStr = (item.length > 0 && item.width > 0) ? `${item.length} × ${item.width}` : '-';
-    const metricStr = (item.area > 0) ? `${item.area.toFixed(2)} m²` : `${item.quantity} dona`;
+    const metricStr = item.unit === 'kg'
+      ? `${Number(item.weight_kg || 0).toFixed(2)} kg`
+      : (item.area > 0) ? `${item.area.toFixed(2)} m²` : `${item.quantity} dona`;
 
     tableRows.push(new TableRow({
       children: [

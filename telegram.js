@@ -453,14 +453,19 @@ async function formatOrderMessage(orderId, actionType = 'status_change') {
 
   if (!order) return null;
 
-  const items = await db.all('SELECT * FROM order_items WHERE order_id = ?', [orderId]);
+  const items = await db.all(`
+    SELECT oi.*, c.unit
+    FROM order_items oi
+    JOIN categories c ON c.id = oi.category_id
+    WHERE oi.order_id = ?
+  `, [orderId]);
 
   let statusEmoji = '🆕';
   let statusUz = 'Yangi buyurtma';
   if (order.status === 'qabul_qilindi') { statusEmoji = '📦'; statusUz = 'Qabul qilindi (Kuryer oldi)'; }
   else if (order.status === 'yuvishda') { statusEmoji = '🧼'; statusUz = 'Yuvish jarayonida (Sexda)'; }
   else if (order.status === 'quritishda') { statusEmoji = '☀️'; statusUz = 'Quritish kamerasida'; }
-  else if (order.status === 'olchayapti') { statusEmoji = '📏'; statusUz = 'Gilam o‘lchamlari kiritilmoqda'; }
+  else if (order.status === 'olchayapti') { statusEmoji = '📏'; statusUz = 'Buyum o‘lchami va og‘irligi kiritilmoqda'; }
   else if (order.status === 'qadoqlayapti') { statusEmoji = '📦'; statusUz = 'Qadoqlanmoqda'; }
   else if (order.status === 'qadoqlandi' || order.status === 'tayyor') { statusEmoji = '✨'; statusUz = 'Qadoqlangan, yetkazishga tayyor'; }
   else if (order.status === 'yetkazilmoqda') { statusEmoji = '🚚'; statusUz = 'Dastavchik yo\'lda (Yetkazilmoqda)'; }
@@ -494,9 +499,13 @@ async function formatOrderMessage(orderId, actionType = 'status_change') {
   }
 
   msg += `🧺 <b>Buyumlar tafsiloti (${items.length} ta):</b>\n`;
+  let totalWeightKg = 0;
   items.forEach((item, index) => {
     let sizeStr = '';
-    if (item.length > 0 && item.width > 0) {
+    if (item.unit === 'kg') {
+      totalWeightKg += Number(item.weight_kg || 0);
+      sizeStr = `(<b>${Number(item.weight_kg || 0).toFixed(2)} kg</b>)`;
+    } else if (item.length > 0 && item.width > 0) {
       sizeStr = `(${item.length}m × ${item.width}m = <b>${item.area.toFixed(2)} m²</b>)`;
     } else {
       sizeStr = `(<b>${item.quantity} dona</b>)`;
@@ -509,6 +518,7 @@ async function formatOrderMessage(orderId, actionType = 'status_change') {
 
   msg += `\n`;
   msg += `📐 <b>Jami maydon:</b> ${order.total_area ? order.total_area.toFixed(2) : 0} m²\n`;
+  if (totalWeightKg > 0) msg += `⚖️ <b>Jami og‘irlik:</b> ${totalWeightKg.toFixed(2)} kg\n`;
   msg += `💰 <b>Jami summa:</b> ${order.final_amount.toLocaleString()} so'm\n`;
   msg += `💳 <b>To'lov holati:</b> ${order.payment_status === 'tolandi' ? '🟢 To\'langan' : (order.paid_amount > 0 ? `🟡 Qisman (${order.paid_amount.toLocaleString()} so'm to'langan)` : '🔴 To\'lanmagan')}\n`;
 

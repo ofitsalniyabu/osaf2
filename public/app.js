@@ -14,6 +14,13 @@ function togglePasswordVisibility(inputId, button) {
   const input = document.getElementById(inputId || 'loginPassword');
   button = button || document.querySelector('.password-visibility-toggle');
   if (!input || !button) return;
+  if (input.classList.contains('secret-masked')) {
+    const visible = input.classList.toggle('secret-visible');
+    button.innerHTML = `<i class="fa-solid ${visible ? 'fa-eye-slash' : 'fa-eye'}" aria-hidden="true"></i>`;
+    button.setAttribute('aria-label', visible ? 'Tokenni yashirish' : 'Tokenni ko‘rsatish');
+    button.title = visible ? 'Tokenni yashirish' : 'Tokenni ko‘rsatish';
+    return;
+  }
   const showPassword = input.type === 'password';
   input.type = showPassword ? 'text' : 'password';
   button.innerHTML = `<i class="fa-solid ${showPassword ? 'fa-eye-slash' : 'fa-eye'}" aria-hidden="true"></i>`;
@@ -178,9 +185,7 @@ function enableHorizontalScroll() {
 
 function enable3dEffects() {
   const selector = '.stat-card, .card, .courier-card, .report-box, .login-card, .btn, .theme-toggle, .nav-item';
-  let activeSurface = null;
   let activeTouchSurface = null;
-  const finePointer = window.matchMedia('(hover: hover) and (pointer: fine)');
   const findSurface = target => target instanceof Element ? target.closest(selector) : null;
 
   const resetSurface = surface => {
@@ -214,16 +219,9 @@ function enable3dEffects() {
   };
 
   document.addEventListener('pointermove', event => {
-    if (event.pointerType === 'touch' && activeTouchSurface) {
-      updateSurface(activeTouchSurface, event.clientX, event.clientY, 1.5);
-      activeTouchSurface.classList.add('is-touching');
-      return;
-    }
-    if (!finePointer.matches || event.pointerType !== 'mouse') return;
-    const surface = findSurface(event.target);
-    if (activeSurface && activeSurface !== surface) resetSurface(activeSurface);
-    activeSurface = surface;
-    if (surface) updateSurface(surface, event.clientX, event.clientY, 2);
+    if (event.pointerType !== 'touch' || !activeTouchSurface) return;
+    updateSurface(activeTouchSurface, event.clientX, event.clientY, 1.5);
+    activeTouchSurface.classList.add('is-touching');
   });
 
   document.addEventListener('pointerdown', event => {
@@ -246,13 +244,6 @@ function enable3dEffects() {
   };
   document.addEventListener('pointerup', releaseTouch);
   document.addEventListener('pointercancel', releaseTouch);
-  document.addEventListener('pointerout', event => {
-    if (!finePointer.matches || event.pointerType !== 'mouse') return;
-    const nextSurface = findSurface(event.relatedTarget);
-    if (nextSurface) return;
-    resetSurface(activeSurface);
-    activeSurface = null;
-  });
 }
 
 function escapeHtml(value) {
@@ -660,7 +651,7 @@ function renderPricingTable() {
     <tr>
       <td><span class="category-icon"><i class="fa-solid fa-rug" aria-hidden="true"></i></span></td>
       <td><strong>${escapeHtml(cat.name)}</strong></td>
-      <td><span class="badge">${cat.unit === 'kv_m' ? 'Kvadrat metr (m²)' : 'Dona hisobi'}</span></td>
+      <td><span class="badge">${cat.unit === 'kv_m' ? 'Kvadrat metr (m²)' : cat.unit === 'kg' ? 'Kilogram (kg)' : 'Dona hisobi'}</span></td>
       <td><strong class="text-primary">${cat.price_per_unit.toLocaleString()} so'm</strong></td>
       <td><small class="text-muted">${escapeHtml(cat.description || '-')}</small></td>
       <td>
@@ -701,7 +692,7 @@ async function saveNewCategory() {
 }
 
 function editCategoryPrompt(id, currentName, currentPrice) {
-  const newPrice = prompt(`"${currentName}" xizmati uchun yangi 1 birlik (m² yoki dona) narxini kiriting (so'm):`, currentPrice);
+  const newPrice = prompt(`"${currentName}" xizmati uchun yangi 1 birlik narxini kiriting (so'm):`, currentPrice);
   if (newPrice && !isNaN(newPrice)) {
     const cat = globalCategories.find(c => c.id === id);
     fetch(`/api/categories/${id}`, {
@@ -1009,10 +1000,10 @@ function onItemCategoryChange(rowId) {
 
   lenInput.required = unit === 'kv_m' && !isCourier;
   widInput.required = unit === 'kv_m' && !isCourier;
-  lenInput.disabled = isCourier || unit === 'dona';
-  widInput.disabled = isCourier || unit === 'dona';
+  lenInput.disabled = isCourier || unit !== 'kv_m';
+  widInput.disabled = isCourier || unit !== 'kv_m';
   row.querySelector('.item-price-cell').hidden = isCourier;
-  if (unit === 'dona') {
+  if (unit !== 'kv_m') {
     lenInput.value = '';
     widInput.value = '';
     row.querySelectorAll('.item-dimension-cell').forEach(cell => { cell.hidden = true; });
@@ -1044,8 +1035,14 @@ function calculateRow(rowId) {
   const subtotalEl = row.querySelector('.item-subtotal');
 
   if (currentUser?.role === 'courier') {
-    metricSpan.innerText = unit === 'kv_m' ? 'Yuvuvchi o‘lchaydi' : '1 dona';
-    subtotalEl.innerText = unit === 'kv_m' ? 'Yuvilgach hisoblanadi' : `${Math.round(price).toLocaleString()} so‘m`;
+    metricSpan.innerText = '1 dona';
+    if (unit === 'kg') metricSpan.innerText = 'Kg yuvishda kiritiladi';
+    metricSpan.title = unit === 'kv_m'
+      ? 'Gilam maydoni yuvuvchi tomonidan o‘lchanadi'
+      : unit === 'kg' ? 'Parda og‘irligi yuvuvchi tomonidan kiritiladi' : '';
+    subtotalEl.innerText = unit === 'kv_m' || unit === 'kg'
+      ? 'Yuvilgach hisoblanadi'
+      : `${Math.round(price).toLocaleString()} so‘m`;
     recalculateTotals();
     return;
   }
@@ -1055,12 +1052,16 @@ function calculateRow(rowId) {
     const area = len * wid;
     metricSpan.innerText = `${area.toFixed(2)} m²`;
     subtotal = Math.round(area * price);
+  } else if (unit === 'kg') {
+    metricSpan.innerText = 'Kg yuvishda kiritiladi';
+    subtotal = 0;
+    subtotalEl.innerText = 'Yuvilgach hisoblanadi';
   } else {
     metricSpan.innerText = `1 dona`;
     subtotal = Math.round(price);
   }
 
-  subtotalEl.innerText = subtotal.toLocaleString() + " so'm";
+  if (unit !== 'kg') subtotalEl.innerText = subtotal.toLocaleString() + " so'm";
   recalculateTotals();
 }
 
@@ -1084,7 +1085,7 @@ function recalculateTotals() {
       const area = len * wid;
       sumArea += area;
       sumPrice += area * price;
-    } else {
+    } else if (unit === 'dona') {
       sumPrice += price;
     }
   });
@@ -1322,21 +1323,28 @@ function renderPackagerOrders() {
   }
   container.innerHTML = globalPackagerOrders.map(order => {
     const items = (order.items || []).map(item => {
-      const dimensions = Number(item.area) > 0
-        ? `${Number(item.length).toFixed(2)} × ${Number(item.width).toFixed(2)} m (${Number(item.area).toFixed(2)} m²)`
-        : `${Number(item.quantity)} dona`;
+      const dimensions = item.unit === 'kg'
+        ? `${Number(item.weight_kg).toFixed(2)} kg`
+        : Number(item.area) > 0
+          ? `${Number(item.length).toFixed(2)} × ${Number(item.width).toFixed(2)} m (${Number(item.area).toFixed(2)} m²)`
+          : `${Number(item.quantity)} dona`;
       const defaultPrice = Number(item.admin_price);
-      const quantityLabel = item.unit === 'kv_m' ? 'm²' : 'dona';
+      const measure = item.unit === 'kv_m' ? Number(item.area)
+        : item.unit === 'kg' ? Number(item.weight_kg) : Number(item.quantity);
+      const quantityLabel = item.unit === 'kv_m' ? 'm²' : item.unit === 'kg' ? 'kg' : 'dona';
+      const priceControl = item.unit === 'kg'
+        ? `<span>Admin narxi / kg: <strong>${defaultPrice.toLocaleString()} so‘m</strong></span>`
+        : `<label>Narx / ${quantityLabel}
+            <input type="number" min="0" max="1000000000" step="500"
+              id="packager-price-${Number(item.id)}"
+              data-quantity="${measure}"
+              value="${Number.isFinite(defaultPrice) ? defaultPrice : 0}"
+              oninput="previewPackagerOrderTotal(${Number(order.id)})">
+          </label>`;
       return `<div class="washer-measurement-row packager-price-row">
         <div><strong>${escapeHtml(item.item_type)}</strong><br><small>${dimensions}${item.notes ? ` · ${escapeHtml(item.notes)}` : ''}</small></div>
-        <label>Narx / ${quantityLabel}
-          <input type="number" min="0" max="1000000000" step="500"
-            id="packager-price-${Number(item.id)}"
-            data-quantity="${item.unit === 'kv_m' ? Number(item.area) : Number(item.quantity)}"
-            value="${Number.isFinite(defaultPrice) ? defaultPrice : 0}"
-            oninput="previewPackagerOrderTotal(${Number(order.id)})">
-        </label>
-        <strong id="packager-subtotal-${Number(item.id)}">${Number(defaultPrice * (item.unit === 'kv_m' ? Number(item.area) : Number(item.quantity))).toLocaleString()} so‘m</strong>
+        ${priceControl}
+        <strong id="packager-subtotal-${Number(item.id)}">${Number(defaultPrice * measure).toLocaleString()} so‘m</strong>
       </div>`;
     }).join('');
     return `<article class="card washer-order-card">
@@ -1346,7 +1354,7 @@ function renderPackagerOrders() {
       </div>
       <div class="card-body">
         <p><strong>Mijoz:</strong> ${escapeHtml(order.customer_name || '—')}</p>
-        <p class="hint">Boshlang‘ich narxlar administrator belgilagan tarifdan olindi. Kerak bo‘lsa narxlarni shu yerda tahrirlang.</p>
+        <p class="hint">Kilogramm tarifi administrator tomonidan belgilanadi. Boshqa buyumlar narxini kerak bo‘lsa shu yerda tahrirlash mumkin.</p>
         <div class="washer-items-list">${items || '<p>Buyumlar topilmadi</p>'}</div>
         <div class="packager-total">
           <div>Buyumlar jami: <strong id="packager-total-${Number(order.id)}">0 so‘m</strong></div>
@@ -1371,10 +1379,12 @@ function previewPackagerOrderTotal(orderId) {
   let total = 0;
   for (const item of order.items || []) {
     const input = document.getElementById(`packager-price-${Number(item.id)}`);
-    const price = Number(input?.value);
-    const quantity = Number(input?.dataset.quantity);
+    const price = item.unit === 'kg' ? Number(item.admin_price) : Number(input?.value);
+    const quantity = item.unit === 'kg'
+      ? Number(item.weight_kg)
+      : Number(input?.dataset.quantity);
     const subtotal = Math.round(price * quantity);
-    if (input && Number.isFinite(price) && price >= 0 && Number.isFinite(quantity) && subtotal >= 0) {
+    if (Number.isFinite(price) && price >= 0 && Number.isFinite(quantity) && subtotal >= 0) {
       total += subtotal;
       const subtotalElement = document.getElementById(`packager-subtotal-${Number(item.id)}`);
       if (subtotalElement) subtotalElement.textContent = `${subtotal.toLocaleString()} so‘m`;
@@ -1392,13 +1402,15 @@ async function markOrderPacked(orderId) {
   if (!order) return;
   const prices = order.items.map(item => ({
     id: Number(item.id),
-    unit_price: Number(document.getElementById(`packager-price-${Number(item.id)}`)?.value)
+    unit_price: item.unit === 'kg'
+      ? Number(item.admin_price)
+      : Number(document.getElementById(`packager-price-${Number(item.id)}`)?.value)
   }));
   if (prices.some(item => !Number.isFinite(item.unit_price) || item.unit_price < 0 || item.unit_price > 1000000000)) {
     alert('Har bir buyum uchun 0 dan 1 000 000 000 so‘mgacha narx kiriting.');
     return;
   }
-  if (!confirm('Admin tariflari yoki kiritgan narxlaringiz bilan yakuniy summani saqlab, buyurtmani qadoqlangan deb belgilaysizmi?')) return;
+  if (!confirm('Adminning kilogramm tarifi va boshqa kiritilgan narxlar bilan yakuniy summani saqlab, buyurtmani qadoqlangan deb belgilaysizmi?')) return;
   try {
     const response = await fetch(`/api/packager/orders/${orderId}/packed`, {
       method: 'POST',
@@ -1452,6 +1464,16 @@ function renderWasherOrders() {
             <span>${Number(item.quantity)} dona${item.notes ? ` · ${escapeHtml(item.notes)}` : ''}</span>
           </div>`;
         }
+        if (item.unit === 'kg') {
+          return `<div class="washer-measurement-row">
+            <strong>${escapeHtml(item.item_type)}</strong>
+            <label>Og‘irligi (kg)
+              <input type="number" min="0.01" max="100000" step="0.01" id="washer-weight-${Number(item.id)}" value="${Number(item.weight_kg) || ''}" ${editable ? '' : 'disabled'} oninput="previewWasherOrderTotal(${Number(order.id)})">
+            </label>
+            <span>Admin narxi / kg: <strong>${Number(item.admin_price).toLocaleString()} so‘m</strong></span>
+            <span>${Number(item.quantity)} dona${item.notes ? ` · ${escapeHtml(item.notes)}` : ''}</span>
+          </div>`;
+        }
         return `<div class="washer-measurement-row">
           <strong>${escapeHtml(item.item_type)}</strong>
           <label>Narx / dona
@@ -1502,13 +1524,18 @@ async function saveWasherMeasurements(orderId) {
     id: Number(item.id),
     length: item.unit === 'kv_m' ? Number(document.getElementById(`washer-length-${Number(item.id)}`).value) : 0,
     width: item.unit === 'kv_m' ? Number(document.getElementById(`washer-width-${Number(item.id)}`).value) : 0,
-    unit_price: Number(document.getElementById(`washer-price-${Number(item.id)}`).value)
+    weight_kg: item.unit === 'kg' ? Number(document.getElementById(`washer-weight-${Number(item.id)}`).value) : 0,
+    unit_price: item.unit === 'kg'
+      ? Number(item.admin_price)
+      : Number(document.getElementById(`washer-price-${Number(item.id)}`).value)
   }));
   if (measurements.some(item => !Number.isFinite(item.length) || !Number.isFinite(item.width) ||
+      !Number.isFinite(item.weight_kg) ||
       !Number.isFinite(item.unit_price) || item.unit_price < 0 ||
       (item.length === 0) !== (item.width === 0) ||
-      order.items.find(source => Number(source.id) === item.id)?.unit === 'kv_m' && (item.length <= 0 || item.width <= 0))) {
-    alert('Har bir gilamning uzunligi/enini va barcha buyumlar narxini tekshiring.');
+      order.items.find(source => Number(source.id) === item.id)?.unit === 'kv_m' && (item.length <= 0 || item.width <= 0) ||
+      order.items.find(source => Number(source.id) === item.id)?.unit === 'kg' && (item.weight_kg <= 0 || item.weight_kg > 100000))) {
+    alert('Gilam o‘lchami, parda og‘irligi va barcha buyumlar narxini tekshiring.');
     return;
   }
   try {
@@ -1519,7 +1546,7 @@ async function saveWasherMeasurements(orderId) {
     });
     const result = await response.json();
     if (!response.ok || !result.success) throw new Error(result.error || 'O‘lchamlarni saqlab bo‘lmadi');
-    showToast(`O‘lcham va narxlar saqlandi: ${Number(result.total_area).toFixed(2)} m², ${Number(result.total_amount).toLocaleString()} so‘m.`);
+    showToast(`O‘lcham va narxlar saqlandi: ${Number(result.total_area).toFixed(2)} m², ${Number(result.total_weight_kg).toFixed(2)} kg, ${Number(result.total_amount).toLocaleString()} so‘m.`);
     await loadWasherOrders();
   } catch (error) {
     alert(error.message);
@@ -1532,20 +1559,27 @@ function previewWasherOrderTotal(orderId) {
   const preview = document.getElementById(`washer-total-preview-${Number(orderId)}`);
   if (!order || !preview) return;
   let areaTotal = 0;
+  let weightTotal = 0;
   let amountTotal = 0;
   for (const item of order.items) {
-    const unitPrice = Number(document.getElementById(`washer-price-${Number(item.id)}`).value) || 0;
+    const unitPrice = item.unit === 'kg'
+      ? Number(item.admin_price)
+      : Number(document.getElementById(`washer-price-${Number(item.id)}`).value) || 0;
     if (item.unit === 'kv_m') {
       const length = Number(document.getElementById(`washer-length-${Number(item.id)}`).value) || 0;
       const width = Number(document.getElementById(`washer-width-${Number(item.id)}`).value) || 0;
       const area = Math.round(length * width * Number(item.quantity || 1) * 100) / 100;
       areaTotal += area;
       amountTotal += Math.round(unitPrice * area);
+    } else if (item.unit === 'kg') {
+      const weight = Number(document.getElementById(`washer-weight-${Number(item.id)}`).value) || 0;
+      weightTotal += weight;
+      amountTotal += Math.round(unitPrice * weight);
     } else {
       amountTotal += Math.round(unitPrice * Number(item.quantity || 1));
     }
   }
-  preview.textContent = `Jami: ${areaTotal.toFixed(2)} m² · ${Math.round(amountTotal).toLocaleString()} so‘m`;
+  preview.textContent = `Jami: ${areaTotal.toFixed(2)} m² · ${weightTotal.toFixed(2)} kg · ${Math.round(amountTotal).toLocaleString()} so‘m`;
 }
 
 async function loadOwnerNotifications() {
@@ -1642,7 +1676,9 @@ function renderOrdersTable(orders) {
 
   tbody.innerHTML = orders.map(ord => {
     const itemsPreview = (ord.items || []).map(i => {
-      const dim = (i.length && i.width) ? `(${i.length}x${i.width}m)` : `(${i.quantity} dona)`;
+      const dim = i.unit === 'kg'
+        ? `(${Number(i.weight_kg || 0).toFixed(2)} kg)`
+        : (i.length && i.width) ? `(${i.length}x${i.width}m)` : `(${i.quantity} dona)`;
       return `${i.item_type} ${dim}`;
     }).join(', ');
 
@@ -1677,7 +1713,7 @@ function renderOrdersTable(orders) {
           ${ord.defect_tags ? `<small class="text-danger">● ${escapeHtml(ord.defect_tags)}</small>` : ''}
         </td>
         <td>
-          <strong>${ord.total_area ? ord.total_area.toFixed(1) : 0} m²</strong>
+          <strong>${ord.total_area ? ord.total_area.toFixed(1) : 0} m²${ord.total_weight_kg ? ` · ${Number(ord.total_weight_kg).toFixed(1)} kg` : ''}</strong>
           <small class="text-muted">(${ord.total_items} ta)</small>
         </td>
         <td>
@@ -1717,7 +1753,7 @@ function renderDashboardRecentTable(orders) {
       <td><strong class="order-code-badge" style="cursor: pointer;" onclick="viewOrderDetails(${Number(ord.id)})">${escapeHtml(ord.order_number)}</strong></td>
       <td><strong>${escapeHtml(ord.customer_name)}</strong><br><small class="text-muted">${escapeHtml(ord.customer_phone)}</small></td>
       <td><small>${escapeHtml(ord.customer_address)}</small></td>
-      <td><b>${ord.total_area ? ord.total_area.toFixed(1) : 0} m²</b> (${ord.total_items} ta)</td>
+      <td><b>${ord.total_area ? ord.total_area.toFixed(1) : 0} m²${ord.total_weight_kg ? ` · ${Number(ord.total_weight_kg).toFixed(1)} kg` : ''}</b> (${ord.total_items} ta)</td>
       <td><strong>${ord.final_amount.toLocaleString()} so'm</strong></td>
       <td>${getStatusPill(ord.status)}</td>
       <td>
@@ -1789,14 +1825,20 @@ function renderCourierDeliveries() {
       `;
     } else if (canManageDelivery && ord.status === 'yetkazilmoqda') {
       deliveryAction = `
-        <button class="btn btn-success" style="flex: 1.2;" onclick="viewOrderDetails(${Number(ord.id)})">
-          <i class="fa-solid fa-circle-info"></i> Yetkazish tafsilotlari
+        <button class="btn btn-success" style="flex: 1.2;" onclick="${currentUser.role === 'courier'
+          ? `quickUpdateStatus(${Number(ord.id)}, 'yetkazildi', ${Number(ord.final_amount)})`
+          : `viewOrderDetails(${Number(ord.id)})`}">
+          <i class="fa-solid ${currentUser.role === 'courier' ? 'fa-circle-check' : 'fa-circle-info'}"></i>
+          ${currentUser.role === 'courier' ? 'Yetkazildi va to‘lov olindi' : 'Yetkazish tafsilotlari'}
         </button>
       `;
     }
-    const itemsListHtml = (ord.items || []).map(i => `
-      <li>• <strong>${escapeHtml(i.item_type)}</strong>: ${(i.length && i.width) ? `${i.length}x${i.width}m (${i.area}m²)` : `${i.quantity} dona`} ${i.notes ? `<i class="text-muted">(${escapeHtml(i.notes)})</i>` : ''}</li>
-    `).join('');
+    const itemsListHtml = (ord.items || []).map(i => {
+      const measure = i.unit === 'kg'
+        ? `${Number(i.weight_kg || 0).toFixed(2)} kg`
+        : (i.length && i.width) ? `${i.length}x${i.width}m (${i.area}m²)` : `${i.quantity} dona`;
+      return `<li>• <strong>${escapeHtml(i.item_type)}</strong>: ${measure} ${i.notes ? `<i class="text-muted">(${escapeHtml(i.notes)})</i>` : ''}</li>`;
+    }).join('');
 
     // Avto lokatsiya bo'yicha navigator havolasi
     let navLinksHtml = '';
@@ -1831,7 +1873,7 @@ function renderCourierDeliveries() {
         </div>
 
         <div class="courier-items-list">
-          <div style="font-weight: 600; margin-bottom: 4px;">Yuklar (${ord.total_items} ta, ${ord.total_area ? ord.total_area.toFixed(1) : 0} m²):</div>
+          <div style="font-weight: 600; margin-bottom: 4px;">Yuklar (${ord.total_items} ta, ${ord.total_area ? ord.total_area.toFixed(1) : 0} m²${ord.total_weight_kg ? ` · ${Number(ord.total_weight_kg).toFixed(1)} kg` : ''}):</div>
           <ul>${itemsListHtml}</ul>
         </div>
 
@@ -1869,7 +1911,9 @@ async function quickUpdateStatus(orderId, newStatus, autoPayAmount = null) {
     });
     const json = await res.json();
     if (!res.ok || !json.success) throw new Error(json.error || 'Buyurtma holatini yangilab bo‘lmadi');
-    showToast('Buyurtma holati yangilandi');
+    showToast(newStatus === 'yetkazildi'
+      ? 'Buyurtma yetkazildi va to‘lov qayd etildi'
+      : 'Buyurtma holati yangilandi');
     if (json.notification_warning) showToast(json.notification_warning, 'info');
     if (currentUser.role !== 'courier') await loadDashboardStats();
     await loadOrders();
@@ -1900,8 +1944,8 @@ async function viewOrderDetails(orderId) {
       <tr>
         <td>${idx + 1}</td>
         <td><strong>${escapeHtml(i.item_type)}</strong></td>
-        <td>${(i.length && i.width) ? `${i.length} × ${i.width} m` : '-'}</td>
-        <td>${i.area > 0 ? `${i.area} m²` : `${i.quantity} dona`}</td>
+        <td>${i.unit === 'kg' ? '-' : (i.length && i.width) ? `${i.length} × ${i.width} m` : '-'}</td>
+        <td>${i.unit === 'kg' ? `${Number(i.weight_kg).toFixed(2)} kg` : i.area > 0 ? `${i.area} m²` : `${i.quantity} dona`}</td>
         <td>${i.unit_price.toLocaleString()} so'm</td>
         <td><strong>${i.subtotal.toLocaleString()} so'm</strong></td>
         <td><small>${escapeHtml(i.notes || '-')}</small></td>
@@ -2447,7 +2491,7 @@ function populateQuickCalcSelect() {
 
   sel.innerHTML = globalCategories.map(c => `
     <option value="${Number(c.id)}" data-unit="${escapeHtml(c.unit)}" data-price="${Number(c.price_per_unit)}">
-      ${escapeHtml(c.name)} (${Number(c.price_per_unit).toLocaleString()} so'm / ${c.unit === 'kv_m' ? 'm²' : 'dona'})
+      ${escapeHtml(c.name)} (${Number(c.price_per_unit).toLocaleString()} so'm / ${c.unit === 'kv_m' ? 'm²' : c.unit === 'kg' ? 'kg' : 'dona'})
     </option>
   `).join('');
   runQuickCalc();
@@ -2469,18 +2513,34 @@ function runQuickCalc() {
   const dimensions = document.getElementById('quickCalcDimensionFields');
   const presets = document.getElementById('quickCalcSizePresets');
   const singleAreaRow = document.getElementById('quickCalcSingleAreaRow');
+  const singleAreaLabel = document.getElementById('quickCalcSingleLabel');
+  const totalMeasureLabel = document.getElementById('quickCalcTotalLabel');
   const quantityLabel = document.getElementById('quickCalcQuantityLabel');
   const unitPriceLabel = document.getElementById('quickResUnitPriceLabel');
   const isAreaBased = unit === 'kv_m';
+  const isWeightBased = unit === 'kg';
   if (dimensions) dimensions.hidden = !isAreaBased;
   if (presets) presets.hidden = !isAreaBased;
   if (singleAreaRow) singleAreaRow.hidden = !isAreaBased;
-  if (quantityLabel) quantityLabel.textContent = isAreaBased ? 'Gilamlar soni' : 'Buyumlar soni';
-  if (unitPriceLabel) unitPriceLabel.textContent = isAreaBased ? '1 m² uchun admin narxi:' : '1 dona uchun admin narxi:';
+  if (singleAreaLabel) singleAreaLabel.textContent = isAreaBased
+    ? '1 ta gilam maydoni:'
+    : isWeightBased ? 'Og‘irligi:' : 'Buyum soni:';
+  if (totalMeasureLabel) totalMeasureLabel.textContent = isAreaBased
+    ? 'Jami maydon:'
+    : isWeightBased ? 'Jami og‘irlik:' : 'Jami buyumlar:';
+  if (quantityLabel) quantityLabel.textContent = isAreaBased ? 'Gilamlar soni' : isWeightBased ? 'Og‘irligi (kg)' : 'Buyumlar soni';
+  if (unitPriceLabel) unitPriceLabel.textContent = isAreaBased ? '1 m² uchun admin narxi:' : isWeightBased ? '1 kg uchun admin narxi:' : '1 dona uchun admin narxi:';
+  const quantityInput = document.getElementById('quickCalcQty');
+  if (quantityInput) {
+    quantityInput.min = isWeightBased ? '0.01' : '1';
+    quantityInput.step = isWeightBased ? '0.01' : '1';
+  }
 
   const len = parseFloat(document.getElementById('quickCalcLen').value) || 0;
   const wid = parseFloat(document.getElementById('quickCalcWid').value) || 0;
-  const qty = parseInt(document.getElementById('quickCalcQty').value) || 1;
+  const qty = isWeightBased
+    ? parseFloat(document.getElementById('quickCalcQty').value) || 0
+    : parseInt(document.getElementById('quickCalcQty').value) || 1;
 
   let singleArea = 0;
   let totalArea = 0;
@@ -2493,6 +2553,10 @@ function runQuickCalc() {
 
     document.getElementById('quickResSingleArea').innerText = `${len} × ${wid} = ${singleArea} m²`;
     document.getElementById('quickResArea').innerText = `${totalArea} m² (${qty} dona)`;
+  } else if (isWeightBased) {
+    document.getElementById('quickResSingleArea').innerText = `${qty} kg`;
+    document.getElementById('quickResArea').innerText = `${qty} kg`;
+    total = Math.round(qty * price);
   } else {
     document.getElementById('quickResSingleArea').innerText = `1 dona`;
     document.getElementById('quickResArea').innerText = `${qty} dona`;
