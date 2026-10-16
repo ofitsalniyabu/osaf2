@@ -1776,6 +1776,55 @@ app.post('/api/users', async (req, res) => {
   }
 });
 
+app.delete('/api/users/:id', async (req, res) => {
+  if (req.user.role !== 'owner') {
+    return res.status(403).json({ success: false, error: 'Xodimni faqat egasi o‘chira oladi' });
+  }
+  try {
+    const userId = Number(req.params.id);
+    if (!Number.isSafeInteger(userId) || userId <= 0) {
+      return res.status(400).json({ success: false, error: 'Xodim ID noto‘g‘ri' });
+    }
+    if (userId === Number(req.user.id)) {
+      return res.status(400).json({ success: false, error: 'O‘z akkauntingizni o‘chira olmaysiz' });
+    }
+
+    const user = await db.get('SELECT id, role FROM users WHERE id = ?', [userId]);
+    if (!user) return res.status(404).json({ success: false, error: 'Xodim topilmadi' });
+    if (user.role === 'owner') {
+      return res.status(400).json({ success: false, error: 'Ega akkauntini o‘chirib bo‘lmaydi' });
+    }
+
+    const activeOrder = await db.get(`
+      SELECT id FROM orders
+      WHERE status NOT IN ('yetkazildi', 'bekor_qilindi')
+        AND (courier_pickup_id = ? OR courier_delivery_id = ?)
+      LIMIT 1
+    `, [userId, userId]);
+    if (activeOrder) {
+      return res.status(409).json({
+        success: false,
+        error: 'Xodimga faol buyurtmalar biriktirilgan. Avval buyurtmalarni boshqa dastavchikka biriktiring.'
+      });
+    }
+
+    await db.transaction(async transaction => {
+      await transaction.run('UPDATE orders SET courier_pickup_id = NULL WHERE courier_pickup_id = ?', [userId]);
+      await transaction.run('UPDATE orders SET courier_delivery_id = NULL WHERE courier_delivery_id = ?', [userId]);
+      await transaction.run('DELETE FROM sessions WHERE user_id = ?', [userId]);
+      await transaction.run('DELETE FROM owner_notifications WHERE user_id = ?', [userId]);
+      await transaction.run('DELETE FROM courier_handoffs WHERE from_courier_id = ? OR to_courier_id = ?', [userId, userId]);
+      await transaction.run('DELETE FROM staff_payments WHERE user_id = ? OR created_by = ?', [userId, userId]);
+      await transaction.run('UPDATE transactions SET created_by = NULL WHERE created_by = ?', [userId]);
+      await transaction.run('DELETE FROM users WHERE id = ?', [userId]);
+    });
+
+    res.json({ success: true, message: 'Xodim va unga tegishli ma’lumotlar o‘chirildi' });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
 app.post('/api/users/:id/reset-password', async (req, res) => {
   if (req.user.role !== 'owner') {
     return res.status(403).json({ success: false, error: 'Parolni faqat egasi tiklay oladi' });

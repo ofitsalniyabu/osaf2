@@ -1,5 +1,6 @@
 // app.js - Foydalanuvchi interfeysi, Avto-lokatsiya, Hisoblash va Login tizimi
 let currentUser = null; // { id, username, full_name, role, phone, car_model, car_number }
+let globalStaff = [];
 let globalCategories = [];
 let globalCouriers = [];
 let globalOrders = [];
@@ -821,6 +822,7 @@ async function loadStaff() {
     const json = await res.json();
     if (json.success) {
       const users = json.data;
+      globalStaff = users;
       globalCouriers = users.filter(u => u.role === 'courier');
 
       populateCourierSelects();
@@ -873,8 +875,33 @@ function renderStaffTable(users) {
           ? '<small>O‘z parolingizni profil orqali almashtiring</small>'
           : `<button class="btn btn-sm btn-outline" onclick="resetStaffPassword(${Number(u.id)})"><i class="fa-solid fa-key"></i> Yangi vaqtinchalik parol</button>`}
       </td>
+      <td>
+        ${Number(u.id) === currentUser.id || u.role === 'owner'
+          ? '<small>O‘chirib bo‘lmaydi</small>'
+          : `<button class="btn btn-sm btn-danger" onclick="deleteStaff(${Number(u.id)})"><i class="fa-solid fa-user-xmark"></i> O‘chirish</button>`}
+      </td>
     </tr>
   `).join('');
+}
+
+async function deleteStaff(userId) {
+  const user = globalStaff.find(staff => Number(staff.id) === Number(userId));
+  if (!user) return;
+  const confirmed = confirm(
+    `${user.full_name} (${user.username}) xodimini butunlay o‘chirasizmi?\n\n` +
+    'Uning tizimga kirishi va oylik/to‘lov tarixi ham o‘chadi. Bu amalni bekor qilib bo‘lmaydi.'
+  );
+  if (!confirmed) return;
+
+  try {
+    const response = await fetch(`/api/users/${Number(userId)}`, { method: 'DELETE' });
+    const result = await response.json();
+    if (!response.ok || !result.success) throw new Error(result.error || 'Xodimni o‘chirib bo‘lmadi');
+    showToast('Xodim va unga tegishli ma’lumotlar o‘chirildi');
+    await loadStaff();
+  } catch (error) {
+    alert(error.message);
+  }
 }
 
 function renderDashboardCouriersMini() {

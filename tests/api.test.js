@@ -399,6 +399,54 @@ test('owner can reset a staff password once and the old session is revoked', asy
   credentials.operator = result.temporary_password;
 });
 
+test('only the owner can permanently delete non-owner staff and their sessions are revoked', async () => {
+  const created = await request('/api/users', {
+    cookie: ownerCookie,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      username: 'delete-me',
+      password: 'delete-me-password-123',
+      full_name: 'Delete Me',
+      role: 'washer'
+    })
+  });
+  assert.equal(created.status, 200);
+  const userId = (await created.json()).id;
+  const staff = await login('delete-me', 'delete-me-password-123');
+  assert.equal(staff.response.status, 200);
+  const staffCookie = staff.cookie.split(';')[0];
+
+  const denied = await request(`/api/users/${userId}`, {
+    cookie: operatorCookie,
+    method: 'DELETE'
+  });
+  assert.equal(denied.status, 403);
+
+  const selfDelete = await request(`/api/users/${userId}`, {
+    cookie: staffCookie,
+    method: 'DELETE'
+  });
+  assert.equal(selfDelete.status, 403);
+
+  const users = (await (await request('/api/users', { cookie: ownerCookie })).json()).data;
+  const owner = users.find(user => user.role === 'owner');
+  const ownerDelete = await request(`/api/users/${owner.id}`, {
+    cookie: ownerCookie,
+    method: 'DELETE'
+  });
+  assert.equal(ownerDelete.status, 400);
+
+  const deleted = await request(`/api/users/${userId}`, {
+    cookie: ownerCookie,
+    method: 'DELETE'
+  });
+  assert.equal(deleted.status, 200);
+  assert.equal((await request('/api/stats', { cookie: staffCookie })).status, 401);
+  const remainingUsers = (await (await request('/api/users', { cookie: ownerCookie })).json()).data;
+  assert.ok(!remainingUsers.some(user => user.id === userId));
+});
+
 test('owner Excel export keeps all report worksheets', async () => {
   const response = await request('/api/reports/excel', { cookie: ownerCookie });
   assert.equal(response.status, 200);
