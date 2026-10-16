@@ -877,12 +877,89 @@ test('owner sets role commission rates and records advances deducted from staff 
   assert.equal(courierPayrollData.balance, courierPayrollData.earned_amount - 1000);
   assert.equal(courierPayrollData.payments[0].description, '15 kunlik avans');
 
+  const operatorPayment = await request('/api/payroll/payments', {
+    cookie: operatorCookie,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      user_id: courier.data.user.id,
+      month: '2000-01',
+      amount: 500,
+      payment_type: 'advance',
+      description: 'Operator bergan avans'
+    })
+  });
+  assert.equal(operatorPayment.status, 200);
+  const operatorSalaryPayment = await request('/api/payroll/payments', {
+    cookie: operatorCookie,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      user_id: courier.data.user.id,
+      amount: 500,
+      payment_type: 'salary'
+    })
+  });
+  assert.equal(operatorSalaryPayment.status, 400);
+  const washerUser = (await (await request('/api/users', { cookie: ownerCookie })).json())
+    .data.find(user => user.role === 'washer');
+  const operatorWasherPayment = await request('/api/payroll/payments', {
+    cookie: operatorCookie,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      user_id: washerUser.id,
+      amount: 500,
+      payment_type: 'advance'
+    })
+  });
+  assert.equal(operatorWasherPayment.status, 404);
+  const payrollAfterOperatorPayment = (await (await request('/api/payroll/me', {
+    cookie: courierSession
+  })).json()).data;
+  assert.equal(payrollAfterOperatorPayment.paid_amount, 1500);
+  assert.equal(payrollAfterOperatorPayment.balance, payrollAfterOperatorPayment.earned_amount - 1500);
+
+  const invalidCourierAdvance = await request('/api/payroll/me/advance', {
+    cookie: courierSession,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ amount: 1250.5 })
+  });
+  assert.equal(invalidCourierAdvance.status, 400);
+  const courierAdvance = await request('/api/payroll/me/advance', {
+    cookie: courierSession,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      amount: 2000,
+      description: 'Oy o‘rtasidagi avans',
+      user_id: 999999
+    })
+  });
+  assert.equal(courierAdvance.status, 200);
+  const updatedCourierPayroll = (await (await request('/api/payroll/me', {
+    cookie: courierSession
+  })).json()).data;
+  assert.equal(updatedCourierPayroll.paid_amount, 3500);
+  assert.equal(updatedCourierPayroll.balance, updatedCourierPayroll.earned_amount - 3500);
+  assert.equal(updatedCourierPayroll.payments[0].amount, 2000);
+  assert.equal(updatedCourierPayroll.payments[0].description, 'Oy o‘rtasidagi avans');
+
   const washer = await login('washer-test', 'washer-password-123');
+  const washerCookie = washer.cookie.split(';')[0];
   const washerPayrollResponse = await request('/api/payroll/me', {
-    cookie: washer.cookie.split(';')[0]
+    cookie: washerCookie
   });
   assert.equal(washerPayrollResponse.status, 200, await washerPayrollResponse.text());
   assert.equal((await washerPayrollResponse.json()).data.earned_amount, Math.round(payrollData.order_revenue * 0.055));
+  const washerAdvance = await request('/api/payroll/me/advance', {
+    cookie: washerCookie,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ amount: 1000 })
+  });
+  assert.equal(washerAdvance.status, 403);
 });
 
 test('Telegram status is visible to the owner, webhook is protected, and daily cron requires a secret', async () => {

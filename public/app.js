@@ -914,9 +914,47 @@ function renderDashboardCouriersMini() {
         <strong>${escapeHtml(c.full_name)}</strong>
         <div style="font-size: 11px; color: var(--text-muted);">${escapeHtml(c.car_model || 'Mashina')} • ${escapeHtml(c.car_number || '-')}</div>
       </div>
-      <a href="tel:${escapeHtml(c.phone)}" class="btn btn-sm btn-outline"><i class="fa-solid fa-phone"></i></a>
+      <div class="d-flex gap-2">
+        ${currentUser?.role === 'admin'
+          ? `<button class="btn btn-sm btn-outline" onclick="recordCourierPaymentFromAdmin(${Number(c.id)})" title="Dastavchikka berilgan pulni qayd etish"><i class="fa-solid fa-money-bill-wave"></i> Pul berish</button>`
+          : ''}
+        <a href="tel:${escapeHtml(c.phone)}" class="btn btn-sm btn-outline"><i class="fa-solid fa-phone"></i></a>
+      </div>
     </div>
   `).join('');
+}
+
+async function recordCourierPaymentFromAdmin(courierId) {
+  const courier = globalCouriers.find(item => Number(item.id) === Number(courierId));
+  if (!courier || currentUser?.role !== 'admin') return;
+
+  const amountInput = prompt(`${courier.full_name} dastavchikka berilgan summani so‘mda kiriting:`);
+  if (amountInput === null) return;
+  const amount = Number(amountInput.trim());
+  if (!Number.isSafeInteger(amount) || amount < 1) {
+    alert('Summani butun musbat so‘m miqdorida kiriting.');
+    return;
+  }
+  const description = prompt('Izoh (ixtiyoriy):');
+  if (description === null) return;
+
+  try {
+    const response = await fetch('/api/payroll/payments', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        user_id: Number(courier.id),
+        amount,
+        payment_type: 'advance',
+        description: description.trim()
+      })
+    });
+    const result = await response.json();
+    if (!response.ok || !result.success) throw new Error(result.error || 'Dastavchik to‘lovi qayd etilmadi');
+    showToast(result.message || 'Dastavchik to‘lovi oyligidan ayrildi');
+  } catch (error) {
+    alert(error.message);
+  }
 }
 
 function openNewStaffModal() {
@@ -1285,6 +1323,17 @@ async function loadMyPayroll() {
             <div><span>Berilgan avans / oylik</span><strong class="text-danger">${Number(payroll.paid_amount).toLocaleString()} so‘m</strong></div>
             <div><span>Qolgan oylik</span><strong class="${payroll.balance < 0 ? 'text-danger' : 'text-success'}">${Number(payroll.balance).toLocaleString()} so‘m</strong></div>
           </div>
+          ${currentUser.role === 'courier' ? `
+            <form class="payroll-rates-form mt-3" onsubmit="recordCourierAdvance(event)">
+              <label>Oy davomida olgan summangizni qayd eting (${escapeHtml(payroll.month)})
+                <input type="number" name="amount" min="1" max="1000000000000" step="1" required placeholder="Masalan: 200000">
+              </label>
+              <label>Izoh (ixtiyoriy)
+                <input type="text" name="description" maxlength="300" placeholder="Avans izohi">
+              </label>
+              <button class="btn btn-primary" type="submit"><i class="fa-solid fa-floppy-disk"></i> Olingan summani saqlash</button>
+            </form>
+          ` : ''}
           <h4 class="payroll-ledger-title">Kirim-chiqim tarixi</h4>
           ${payments}
         </div>
@@ -1293,6 +1342,41 @@ async function loadMyPayroll() {
   } catch (error) {
     console.error('Oylik ma’lumotlari xatosi:', error);
     panel.innerHTML = `<div class="card card-body text-danger">${escapeHtml(error.message)}</div>`;
+  }
+}
+
+async function recordCourierAdvance(event) {
+  event.preventDefault();
+  const form = event.currentTarget;
+  const submitButton = form.querySelector('button[type="submit"]');
+  const originalText = submitButton.innerHTML;
+  const formData = new FormData(form);
+  const amount = Number(formData.get('amount'));
+  if (!Number.isSafeInteger(amount) || amount < 1) {
+    alert('Olingan summani butun musbat so‘m miqdorida kiriting.');
+    return;
+  }
+
+  submitButton.disabled = true;
+  submitButton.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Saqlanmoqda...';
+  try {
+    const response = await fetch('/api/payroll/me/advance', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        amount,
+        description: String(formData.get('description') || '').trim()
+      })
+    });
+    const result = await response.json();
+    if (!response.ok || !result.success) throw new Error(result.error || 'Avansni qayd etib bo‘lmadi');
+    showToast(result.message || 'Olingan summa qayd etildi');
+    await loadMyPayroll();
+  } catch (error) {
+    alert(error.message);
+  } finally {
+    submitButton.disabled = false;
+    submitButton.innerHTML = originalText;
   }
 }
 

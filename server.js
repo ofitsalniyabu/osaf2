@@ -1568,6 +1568,37 @@ app.get('/api/payroll/me', async (req, res) => {
   }
 });
 
+app.post('/api/payroll/me/advance', async (req, res) => {
+  if (req.user.role !== 'courier') {
+    return res.status(403).json({ success: false, error: 'Avansni faqat dastavchik o‘zi qayd eta oladi' });
+  }
+  try {
+    const amount = Number(req.body.amount);
+    const description = req.body.description === undefined ? '' : req.body.description;
+    if (!Number.isSafeInteger(amount) || amount < 1 || amount > 1000000000000 ||
+        typeof description !== 'string' || description.length > 300) {
+      return res.status(400).json({ success: false, error: 'Summa butun musbat son bo‘lishi, izoh esa 300 belgidan oshmasligi kerak' });
+    }
+
+    const month = getTashkentMonth();
+    const paymentDescription = description.trim() ||
+      `${req.user.full_name} — ${month} oyi uchun dastavchik qayd etgan avans`;
+    await db.transaction(async transaction => {
+      await transaction.run(`
+        INSERT INTO staff_payments (user_id, payroll_month, payment_type, amount, description, created_by)
+        VALUES (?, ?, 'advance', ?, ?, ?)
+      `, [req.user.id, month, amount, paymentDescription, req.user.id]);
+      await transaction.run(`
+        INSERT INTO transactions (order_id, type, category, amount, payment_method, description, created_by)
+        VALUES (NULL, 'chiqim', 'ishchi_oyligi', ?, 'naqd', ?, ?)
+      `, [amount, `Dastavchik qayd etgan avans: ${paymentDescription}`, req.user.id]);
+    });
+    res.json({ success: true, message: 'Avans oylikdan ayrilib, kassa chiqimiga qayd etildi' });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
 app.get('/api/payroll/summary', async (req, res) => {
   if (req.user.role !== 'owner') {
     return res.status(403).json({ success: false, error: 'Oylik hisobini faqat egasi ko‘ra oladi' });
@@ -1643,24 +1674,27 @@ app.post('/api/payroll/rates', async (req, res) => {
 });
 
 app.post('/api/payroll/payments', async (req, res) => {
-  if (req.user.role !== 'owner') {
-    return res.status(403).json({ success: false, error: 'Xodimga to‘lovni faqat egasi qayd eta oladi' });
+  const isOperatorCourierPayment = req.user.role === 'admin';
+  if (req.user.role !== 'owner' && !isOperatorCourierPayment) {
+    return res.status(403).json({ success: false, error: 'Xodimga to‘lovni egasi yoki operator qayd eta oladi' });
   }
   try {
     const userId = Number(req.body.user_id);
-    const { month, payment_type: paymentType } = req.body;
+    const month = isOperatorCourierPayment ? getTashkentMonth() : req.body.month;
+    const paymentType = isOperatorCourierPayment ? 'advance' : req.body.payment_type;
     const amount = Number(req.body.amount);
     const description = req.body.description === undefined ? '' : req.body.description;
-    if (!Number.isInteger(userId) || userId < 1 || !getPayrollMonthRange(month) ||
+    if ((isOperatorCourierPayment && req.body.payment_type !== undefined && req.body.payment_type !== 'advance') ||
+        !Number.isInteger(userId) || userId < 1 || !getPayrollMonthRange(month) ||
         !['advance', 'salary'].includes(paymentType) ||
         !Number.isSafeInteger(amount) || amount < 1 || amount > 1000000000000 ||
         typeof description !== 'string' || description.length > 300) {
       return res.status(400).json({ success: false, error: 'Xodim, oy, to‘lov turi, summa yoki izoh noto‘g‘ri' });
     }
-    const user = await db.get(`
-      SELECT id, full_name FROM users
-      WHERE id = ? AND role IN ('courier', 'washer', 'packager') AND status = 'active'
-    `, [userId]);
+    const user = await db.get(isOperatorCourierPayment
+      ? `SELECT id, full_name FROM users WHERE id = ? AND role = 'courier' AND status = 'active'`
+      : `SELECT id, full_name FROM users WHERE id = ? AND role IN ('courier', 'washer', 'packager') AND status = 'active'`,
+    [userId]);
     if (!user) return res.status(404).json({ success: false, error: 'Faol xodim topilmadi' });
     const label = paymentType === 'advance' ? 'Avans' : 'Oylik to‘lovi';
     const paymentDescription = description.trim() ||

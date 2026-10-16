@@ -25,7 +25,7 @@ Mazkur tizim professional gilam yuvish korxonalari uchun maxsus ishlab chiqilgan
   - Mijoz telefoniga 1 tugma bilan qo'ng'iroq qilish, manzil va mo'ljalni ko'rish.
   - Holatni tezkor o'zgartirish (*"Yetkazishga chiqdim"*, *"Yetkazdim va pulni oldim"*).
   - Yetkazishga tayyor buyurtmalardan istalganini tanlab olish; birinchi bo'lib olgan dastavchik buyurtmaga biriktiriladi.
-  - Joriy oy bo'yicha hisoblangan oylik, berilgan avans/to'lovlar va qolgan summani ko'rish.
+  - Joriy oy bo'yicha hisoblangan oylik, berilgan avans/to'lovlar va qolgan summani ko'rish; oy davomida olgan avansini o'zi qayd etish.
 - **🧼 Yuvuvchi:**
   - Sexga topshirilgan buyurtmalarni alohida ish maydonida yuvish, quritish va qadoqlash bosqichlaridan o'tkazish.
   - Qadoqlashda gilamlarning haqiqiy uzunligi/enini va barcha buyumlarning haqiqiy xizmat narxini belgilash; m² va buyurtma summasi avtomatik qayta hisoblanadi.
@@ -98,7 +98,7 @@ Xodim qo'shishda kamida 8 belgili alohida parol kiriting. Parollar bazada scrypt
 - Kuryer faqat o'ziga biriktirilgan buyurtmalarni ko'radi; tayyor buyurtmani yetkazish holatiga o'tkazadi va to'liq to'lov bilan topshirishni tasdiqlaydi.
 - Yuvuvchi buyurtmani yuvish va quritish bosqichlaridan o'tkazadi, gilam o'lchami hamda narxini kiritib qadoqlovchiga topshiradi.
 - Qadoqlovchi uchun alohida ish maydoni mavjud: u qadoqlash navbatini ko'radi va tasdiqlagach buyurtma dastavchikning yetkazish ro'yxatiga o'tadi.
-- Oylik foizi egasi tomonidan lavozim kesimida belgilanadi va shu oyda yetkazilgan buyurtmalarning yakuniy summasiga qo'llanadi. Egasi bergan avans yoki oylik to'lovi xodim balansidan ayriladi va kassada chiqim sifatida saqlanadi.
+- Oylik foizi egasi tomonidan lavozim kesimida belgilanadi va shu oyda yetkazilgan buyurtmalarning yakuniy summasiga qo'llanadi. Egasi qayd etgan avans yoki oylik to'lovi xodim balansidan ayrilib, kassada chiqim sifatida saqlanadi. Dastavchik ham oy davomida o'zi olgan avansni faqat o'z nomidan qayd eta oladi; operator esa dastavchikka bergan pulini qayd etadi. Har ikkala yozuv oylik balansidan ayrilib, kassada chiqim bo'lib yoziladi.
 - Dastavchik qadoqlash jarayonidagi buyurtmalarni ko'rmaydi; qadoqlovchi tasdiqlaganidan keyin yetkazishni boshlashi mumkin.
 - API har bir so'rovda sessiya va rolni server tomonida tekshiradi. Buyurtmadagi narxlar xizmatlar katalogidan olinadi.
 - Kirish ekrani katta, qayta yangilanadigan, 5 daqiqa amal qiluvchi CAPTCHA tasviridan foydalanadi; kod bir martalik va IP sessiyasiga bog'langan. Muvaffaqiyatsiz parol urinishlari qo'shimcha ravishda 15 daqiqalik cheklov bilan himoyalanadi.
