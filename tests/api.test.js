@@ -154,6 +154,7 @@ test('login page is served without exposing demo credentials', async () => {
   assert.match(baseUrl, /^https:/);
   assert.match(html, /id="loginScreen"/);
   assert.match(html, /id="passwordModal"/);
+  assert.match(html, /id="itemMetricHeading">Maydon \(m²\) \/ Og‘irlik \(kg\) \/ Soni<\/th>/);
   assert.match(html, /rel="manifest" href="\/manifest\.webmanifest"/);
   assert.match(html, /id="loginUsername" name="username" autocomplete="username"/);
   assert.match(html, /id="loginPassword" name="password" autocomplete="current-password"/);
@@ -184,6 +185,7 @@ test('login page is served without exposing demo credentials', async () => {
   assert.equal(serviceWorkerResponse.status, 200);
   assert.match(await serviceWorkerResponse.text(), /addEventListener\('fetch'/);
   assert.match(appScriptText, /Yangi vaqtinchalik parol/);
+  assert.match(appScriptText, /isCourier\s*\?\s*'Soni \/ Holati'/);
   assert.match(html, /quickCalcSizePresets/);
   assert.match(appScriptText, /Yetkazib berish/);
   assert.match(appScriptText, /title="Yetkazib berish ma'lumotlari"/);

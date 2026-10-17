@@ -432,6 +432,12 @@ async function changePassword() {
 function syncCourierDimensionVisibility() {
   const isCourier = currentUser?.role === 'courier';
   document.getElementById('orderItemsTable')?.classList.toggle('courier-intake', isCourier);
+  const metricHeading = document.getElementById('itemMetricHeading');
+  if (metricHeading) {
+    metricHeading.textContent = isCourier
+      ? 'Soni / Holati'
+      : 'Maydon (m²) / Og‘irlik (kg) / Soni';
+  }
   document.querySelectorAll('.item-dimension-heading').forEach(el => {
     el.style.display = isCourier ? 'none' : '';
   });
