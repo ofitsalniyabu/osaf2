@@ -8,7 +8,7 @@
     "android:add": "cap add android",
     "android:sync": "cap sync android",
     "android:open": "cap open android",
-    "android:apk": "cap sync android && android\\gradlew.bat -p android assembleDebug"
+    "android:apk": "node scripts/build-android-apk.js"
   },
   "keywords": [],
   "author": "",

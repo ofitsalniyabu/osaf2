@@ -154,6 +154,7 @@ test('login page is served without exposing demo credentials', async () => {
   assert.match(baseUrl, /^https:/);
   assert.match(html, /id="loginScreen"/);
   assert.match(html, /id="passwordModal"/);
+  assert.match(html, /rel="manifest" href="\/manifest\.webmanifest"/);
   assert.match(html, /id="loginUsername" name="username" autocomplete="username"/);
   assert.match(html, /id="loginPassword" name="password" autocomplete="current-password"/);
   assert.match(html, /id="tgBotToken" name="telegram-bot-token" class="secret-masked" autocomplete="off"/);
@@ -168,6 +169,20 @@ test('login page is served without exposing demo credentials', async () => {
   assert.match(html, /amaldagi parollar hech kimga ko‘rsatilmaydi/i);
   const appScript = await request('/app.js');
   const appScriptText = await appScript.text();
+  assert.match(appScriptText, /serviceWorker\.register\('\/service-worker\.js'\)/);
+  const manifestResponse = await request('/manifest.webmanifest');
+  assert.equal(manifestResponse.status, 200);
+  const manifest = await manifestResponse.json();
+  assert.equal(manifest.name, 'OSAF Gilam Yuvish');
+  assert.equal(manifest.display, 'standalone');
+  for (const icon of manifest.icons) {
+    const iconResponse = await request(icon.src);
+    assert.equal(iconResponse.status, 200, `${icon.src} should be available`);
+    assert.match(iconResponse.headers.get('content-type'), /image\/png/);
+  }
+  const serviceWorkerResponse = await request('/service-worker.js');
+  assert.equal(serviceWorkerResponse.status, 200);
+  assert.match(await serviceWorkerResponse.text(), /addEventListener\('fetch'/);
   assert.match(appScriptText, /Yangi vaqtinchalik parol/);
   assert.match(html, /quickCalcSizePresets/);
   assert.match(appScriptText, /Yetkazib berish/);

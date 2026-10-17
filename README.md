@@ -80,6 +80,31 @@ npm start
 Mahalliy server `https://localhost:3000` manzilida ishga tushadi. Interfeys Font Awesome CDN ikonkalari, Manrope shriftining Google Fonts CDN versiyasi, saqlanadigan tun/kunduz rejimi va harakatni kamaytirish sozlamasini qo'llab-quvvatlaydi. 3D kartalar, tugmalar va menyular sichqoncha yoki mobil teginish harakatiga javob beradi; jadvallar telefon va sichqonchada yonlama suriladi. `npm test` avtomatlashtirilgan tekshiruvlarni bajaradi. Mahalliy ishlab chiqishda SQLite ishlatiladi; Vercel’da esa doimiy PostgreSQL ma’lumotlar bazasi majburiy.
 Eski ishga tushirish odati uchun `python server.py` ham HTTPS himoyali Node.js serverini ishga tushiradi; mustaqil, eski Python API endi so'rov qabul qilmaydi.
 
+### Android APK yig'ish
+
+Java 17 yoki yangiroq versiya va Android Studio o'rnatilgan kompyuterda Android Studio SDK Manager orqali **Android SDK Platform 35** hamda **Android SDK Build-Tools** ni o'rnating. So'ng quyidagini bajaring:
+
+```bash
+npm run android:apk
+```
+
+Windows PowerShell SDK'ni odatiy `%LOCALAPPDATA%\Android\Sdk` joyidan avtomatik izlaydi. SDK boshqa joyga o'rnatilgan bo'lsa, yo'lini ko'rsating:
+
+```powershell
+$env:ANDROID_HOME = "C:\Android\Sdk"
+npm run android:apk
+```
+
+Android Studio bo'lmasa, [Android Studio'ni o'rnating](https://developer.android.com/studio), ochilganda SDK komponentlarini o'rnatishni yakunlang va build buyrug'ini qayta bajaring. SDK topilmasa, buyruq aniq sozlash yo'riqnomasini chiqaradi.
+
+Tayyor, o'rnatish mumkin bo'lgan debug APK `dist/OSAF-Gilam-Yuvish.apk` manziliga chiqariladi. Ilova `capacitor.config.json` dagi HTTPS sayt manzilidan foydalanadi; APK ishlashi uchun internet va sayt serveri kerak. Google Play uchun release APK/AAB alohida imzolash talab qiladi.
+
+Sayt fon rasmini almashtirish uchun loyiha ildizidagi `image/background.png` faylini o'zingizning rasmingiz bilan almashtiring.
+
+### Chrome orqali Android ilova o'rnatish
+
+Sayt manifest va OSAF logotipli o'rnatish ikonkasini taqdim etadi. O'zgarishlarni HTTPS saytingizga deploy qilgandan so'ng Android Chrome'da saytni yangilang, menyudan **Ilovani o'rnatish** yoki **Bosh ekranga qo'shish** ni bosing va Chrome oynasida **O'rnatish** ni tanlang. **Yorliq yaratish** Chrome'ning alohida yorliqidir; Chrome ko'rsatadigan tizim oynasi sayt tomonidan yashirilmaydi. Oldin yaratilgan umumiy ikonka ko'rinsa, eski yorliqni o'chirib, yangidan o'rnating.
+
 ### HTTPS va mahalliy sertifikat
 
 Birinchi ishga tushishda localhost uchun bir yillik o'z-o'zini imzolagan HTTPS sertifikati avtomatik yaratiladi va `%USERPROFILE%\.toza-gilam\localhost-cert.pem` hamda `localhost-key.pem` fayllarida saqlanadi. Brauzer sertifikatni tanimagani sababli mahalliy sahifada ogohlantirish ko'rsatishi mumkin; faqat o'zingizning ushbu kompyuteringizda ochayotgan `https://localhost:3000` sahifasi uchun sertifikatni tekshirib davom eting. Tashqi serverga mo'ljallangan ishonchli sertifikat uchun `TLS_CERT_PATH` va `TLS_KEY_PATH` muhit o'zgaruvchilarini ikkalasini ham belgilang.

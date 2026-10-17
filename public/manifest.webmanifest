@@ -1,0 +1,39 @@
+{
+  "id": "/",
+  "name": "OSAF Gilam Yuvish",
+  "short_name": "OSAF Gilam",
+  "description": "OSAF gilam yuvish markazi boshqaruv tizimi",
+  "lang": "uz",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#b00014",
+  "theme_color": "#b00014",
+  "icons": [
+    {
+      "src": "/icons/osaf-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icons/osaf-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icons/osaf-maskable-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "maskable"
+    },
+    {
+      "src": "/icons/osaf-maskable-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
+}

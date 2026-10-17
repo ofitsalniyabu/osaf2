@@ -259,6 +259,11 @@ function escapeHtml(value) {
 
 // Boshlang'ich yuklash
 document.addEventListener('DOMContentLoaded', async () => {
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('/service-worker.js')
+      .catch(error => console.error('PWA service worker ro‘yxatdan o‘tmadi:', error));
+  }
+
   applyTheme(localStorage.getItem('osaf-theme') || 'dark');
   enableHorizontalScroll();
   enable3dEffects();
@@ -424,6 +429,17 @@ async function changePassword() {
   }
 }
 
+function syncCourierDimensionVisibility() {
+  const isCourier = currentUser?.role === 'courier';
+  document.getElementById('orderItemsTable')?.classList.toggle('courier-intake', isCourier);
+  document.querySelectorAll('.item-dimension-heading').forEach(el => {
+    el.style.display = isCourier ? 'none' : '';
+  });
+  document.querySelectorAll('.item-dimension-cell').forEach(el => {
+    el.style.display = isCourier ? 'none' : '';
+  });
+}
+
 function applyUserSession() {
   if (!currentUser) return;
 
@@ -448,6 +464,7 @@ function applyUserSession() {
   const notificationPanel = document.getElementById('ownerNotificationsPanel');
   if (notificationPanel) notificationPanel.style.display = currentUser.role === 'owner' ? 'block' : 'none';
   document.getElementById('orderItemsTable').classList.toggle('courier-intake', currentUser.role === 'courier');
+  syncCourierDimensionVisibility();
   const orderItemsHeading = document.getElementById('orderItemsHeading');
   if (orderItemsHeading) {
     orderItemsHeading.innerHTML = currentUser.role === 'courier'
@@ -1063,23 +1080,17 @@ function onItemCategoryChange(rowId) {
 
   if (defaultPrice) priceInput.value = defaultPrice;
 
+  const shouldHideDimensions = isCourier || unit !== 'kv_m';
   lenInput.required = unit === 'kv_m' && !isCourier;
   widInput.required = unit === 'kv_m' && !isCourier;
-  lenInput.disabled = isCourier || unit !== 'kv_m';
-  widInput.disabled = isCourier || unit !== 'kv_m';
+  lenInput.disabled = shouldHideDimensions;
+  widInput.disabled = shouldHideDimensions;
   row.querySelector('.item-price-cell').hidden = isCourier;
-  if (unit !== 'kv_m') {
+  row.querySelectorAll('.item-dimension-cell').forEach(cell => { cell.hidden = shouldHideDimensions; });
+
+  if (shouldHideDimensions) {
     lenInput.value = '';
     widInput.value = '';
-    row.querySelectorAll('.item-dimension-cell').forEach(cell => { cell.hidden = true; });
-  } else if (isCourier) {
-    lenInput.value = '';
-    widInput.value = '';
-    row.querySelectorAll('.item-dimension-cell').forEach(cell => { cell.hidden = true; });
-  } else {
-    lenInput.disabled = false;
-    widInput.disabled = false;
-    row.querySelectorAll('.item-dimension-cell').forEach(cell => { cell.hidden = false; });
   }
 
   calculateRow(rowId);
